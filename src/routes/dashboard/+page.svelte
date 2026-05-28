@@ -69,12 +69,12 @@
 
 		// Find completed checklists that haven't been synced yet
 		const pending = inspections.filter(
-			(i) => i.status === "completed" && !i.synced
+			(i) => i.status === "completed" && !i.synced,
 		);
 
 		for (const ins of pending) {
 			if (activeSyncIds.has(ins.id)) continue;
-			
+
 			// Add to active syncs
 			activeSyncIds.add(ins.id);
 			activeSyncIds = new Set(activeSyncIds); // trigger reactivity in Svelte 5
@@ -84,7 +84,10 @@
 				// Refresh local list to pick up updated "synced: true" and lightweight urls
 				inspections = await getAllInspections();
 			} catch (e) {
-				console.error(`Failed to sync inspection ${ins.id} to cloud:`, e);
+				console.error(
+					`Failed to sync inspection ${ins.id} to cloud:`,
+					e,
+				);
 			} finally {
 				activeSyncIds.delete(ins.id);
 				activeSyncIds = new Set(activeSyncIds); // trigger reactivity in Svelte 5
@@ -193,26 +196,67 @@
 					</h2>
 					<div class="flex items-center gap-2.5 mt-2">
 						{#if isOffline}
-							<div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/10 text-amber-600 border border-amber-500/25 text-xs font-bold animate-pulse">
-								<span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+							<div
+								class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/10 text-amber-600 border border-amber-500/25 text-xs font-bold animate-pulse"
+							>
+								<span
+									class="w-1.5 h-1.5 rounded-full bg-amber-500"
+								></span>
 								<span>Modo Offline (Aguardando Internet)</span>
 							</div>
 						{:else if activeSyncIds.size > 0}
-							<div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-500/10 text-blue-600 border border-blue-500/25 text-xs font-bold">
-								<svg class="animate-spin h-3.5 w-3.5 text-blue-650" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-									<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-									<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+							<div
+								class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-500/10 text-blue-600 border border-blue-500/25 text-xs font-bold"
+							>
+								<svg
+									class="animate-spin h-3.5 w-3.5 text-blue-650"
+									xmlns="http://www.w3.org/2000/svg"
+									fill="none"
+									viewBox="0 0 24 24"
+								>
+									<circle
+										class="opacity-25"
+										cx="12"
+										cy="12"
+										r="10"
+										stroke="currentColor"
+										stroke-width="4"
+									></circle>
+									<path
+										class="opacity-75"
+										fill="currentColor"
+										d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+									></path>
 								</svg>
-								<span>Sincronizando {activeSyncIds.size} {activeSyncIds.size === 1 ? 'relatório' : 'relatórios'}...</span>
+								<span
+									>Sincronizando {activeSyncIds.size}
+									{activeSyncIds.size === 1
+										? "relatório"
+										: "relatórios"}...</span
+								>
 							</div>
-						{:else if inspections.some(i => i.status === "completed" && !i.synced)}
-							<div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-500/10 text-slate-600 border border-slate-500/25 text-xs font-bold">
-								<span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
-								<span>{inspections.filter(i => i.status === "completed" && !i.synced).length} na fila de envio</span>
+						{:else if inspections.some((i) => i.status === "completed" && !i.synced)}
+							<div
+								class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-500/10 text-slate-600 border border-slate-500/25 text-xs font-bold"
+							>
+								<span
+									class="w-1.5 h-1.5 rounded-full bg-slate-400"
+								></span>
+								<span
+									>{inspections.filter(
+										(i) =>
+											i.status === "completed" &&
+											!i.synced,
+									).length} na fila de envio</span
+								>
 							</div>
 						{:else}
-							<div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-600 border border-emerald-500/25 text-xs font-bold">
-								<span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+							<div
+								class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-600 border border-emerald-500/25 text-xs font-bold"
+							>
+								<span
+									class="w-1.5 h-1.5 rounded-full bg-emerald-500"
+								></span>
 								<span>Nuvem Sincronizada</span>
 							</div>
 						{/if}
@@ -348,23 +392,39 @@
 											<!-- Cloud Sync status badge -->
 											{#if rep.synced}
 												<span
-													class="px-2 py-0.5 text-[9px] font-black uppercase rounded border bg-blue-50 dark:bg-blue-950/20 text-blue-650 dark:text-blue-400 border-blue-200 dark:border-blue-805/50 flex items-center gap-1 font-extrabold"
+													class="px-2 py-0.5 text-[9px] uppercase rounded border bg-blue-50 dark:bg-blue-950/20 text-blue-650 dark:text-blue-400 border-blue-200 dark:border-blue-805/50 flex items-center gap-1 font-extrabold"
 												>
 													☁️ Sincronizado
 												</span>
 											{:else if activeSyncIds.has(rep.id)}
 												<span
-													class="px-2 py-0.5 text-[9px] font-black uppercase rounded border bg-blue-500/10 text-blue-600 border-blue-500/20 flex items-center gap-1 animate-pulse font-extrabold"
+													class="px-2 py-0.5 text-[9px] uppercase rounded border bg-blue-500/10 text-blue-600 border-blue-500/20 flex items-center gap-1 animate-pulse font-extrabold"
 												>
-													<svg class="animate-spin h-2 w-2 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-														<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-														<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+													<svg
+														class="animate-spin h-2 w-2 text-blue-600"
+														xmlns="http://www.w3.org/2000/svg"
+														fill="none"
+														viewBox="0 0 24 24"
+													>
+														<circle
+															class="opacity-25"
+															cx="12"
+															cy="12"
+															r="10"
+															stroke="currentColor"
+															stroke-width="4"
+														></circle>
+														<path
+															class="opacity-75"
+															fill="currentColor"
+															d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+														></path>
 													</svg>
 													Enviando...
 												</span>
 											{:else if isOffline}
 												<span
-													class="px-2 py-0.5 text-[9px] font-black uppercase rounded border bg-amber-500/10 text-amber-600 border-amber-500/20 flex items-center gap-1 font-extrabold"
+													class="px-2 py-0.5 text-[9px] uppercase rounded border bg-amber-500/10 text-amber-600 border-amber-500/20 flex items-center gap-1 font-extrabold"
 												>
 													🕒 Fila (Offline)
 												</span>
