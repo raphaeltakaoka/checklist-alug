@@ -343,17 +343,18 @@
 
 				<!-- Progress Tracker Bar -->
 				<div
-					class="w-full sm:w-auto grid grid-cols-4 sm:flex items-center gap-1 sm:gap-2 bg-slate-200/60 dark:bg-slate-900/60 p-1.5 rounded-xl border border-slate-300/40 dark:border-slate-800/80"
+					class="w-full sm:w-auto flex items-center gap-1 sm:gap-2 bg-slate-200/60 dark:bg-slate-900/60 p-1.5 rounded-xl border border-slate-300/40 dark:border-slate-800/80"
 				>
-					{#each [{ step: 1, label: "Detalhes" }, { step: 2, label: "Interior" }, { step: 3, label: "Mapa de Danos" }, { step: 4, label: "Conclusão" }] as item}
+					{#each [{ step: 1, label: "Detalhes", short: "Info" }, { step: 2, label: "Interior", short: "Int" }, { step: 3, label: "Mapa de Danos", short: "Mapa" }, { step: 4, label: "Conclusão", short: "Fim" }] as item}
 						<button
 							onclick={() => goToStep(item.step)}
-							class="px-2 py-1.5 sm:px-3 rounded-lg text-[10px] sm:text-xs font-bold transition-all cursor-pointer text-center {currentStep ===
+							class="flex-1 sm:flex-initial px-2 py-1.5 sm:px-3 rounded-lg text-[10px] sm:text-xs font-bold transition-all cursor-pointer text-center {currentStep ===
 							item.step
 								? 'bg-blue-600 text-white shadow-sm'
 								: 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-300'}"
 						>
-							{item.step}. {item.label}
+							<span class="inline sm:hidden">{item.step}. {item.short}</span>
+							<span class="hidden sm:inline">{item.step}. {item.label}</span>
 						</button>
 					{/each}
 				</div>
@@ -579,13 +580,18 @@
 												? 'bg-blue-600 text-white border-transparent shadow-md shadow-blue-500/20'
 												: 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'}"
 										>
-											{level === "0/8"
-												? "Vazio (0/8)"
-												: level === "8/8"
-													? "Cheio (8/8)"
-													: level === "4/8"
-														? "Meio (4/8)"
-														: level}
+											<span class="inline sm:hidden">
+												{level === "0/8" ? "Vazio" : level === "8/8" ? "Cheio" : level === "4/8" ? "Meio" : level}
+											</span>
+											<span class="hidden sm:inline">
+												{level === "0/8"
+													? "Vazio (0/8)"
+													: level === "8/8"
+														? "Cheio (8/8)"
+														: level === "4/8"
+															? "Meio (4/8)"
+															: level}
+											</span>
 										</button>
 									{/each}
 								</div>

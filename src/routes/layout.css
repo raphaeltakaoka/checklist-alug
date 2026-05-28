@@ -2,6 +2,20 @@
 
 @variant dark (&:where(.dark, .dark *));
 
+html, body {
+	max-width: 100%;
+	overflow-x: hidden;
+	text-size-adjust: 100%;
+	-webkit-text-size-adjust: 100%;
+}
+
+/* Previne zoom no foco de inputs e selects em dispositivos móveis */
+@media (max-width: 768px) {
+	input, select, textarea {
+		font-size: 16px !important;
+	}
+}
+
 .theme-transition,
 .theme-transition *,
 .theme-transition *:before,

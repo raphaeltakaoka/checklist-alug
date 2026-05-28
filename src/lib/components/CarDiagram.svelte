@@ -120,7 +120,7 @@
 >
 	<!-- Visual Blueprint (SVG) -->
 	<div
-		class="relative w-full max-w-[750px] aspect-1/2 p-0 sm:p-4 flex items-center justify-center"
+		class="relative w-full max-w-[750px] aspect-[1/2] p-0 sm:p-4 flex items-center justify-center"
 	>
 		<!-- Dynamic Interactive Car SVG Outline -->
 		<svg viewBox="0 0 200 400" class="w-full h-full select-none">
