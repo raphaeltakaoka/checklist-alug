@@ -10,6 +10,14 @@
 	// Wizard navigation
 	let currentStep = $state(1); // 1: General Info, 2: Interior, 3: Damage Map, 4: Signoff
 
+	// Scroll to top when the step changes
+	$effect(() => {
+		currentStep;
+		if (typeof window !== "undefined") {
+			window.scrollTo(0, 0);
+		}
+	});
+
 	// Unique ID & metadata for draft/completed inspections
 	let id = $state("ins-" + crypto.randomUUID());
 	let createdAtDate = $state(null);
@@ -91,7 +99,8 @@
 					inspectionType = draft.inspectionType || "Entrega";
 					inspectorName = draft.inspectorName || inspectorName;
 					clientName = draft.clientName || "";
-					inspectionDateTime = draft.inspectionDateTime || inspectionDateTime;
+					inspectionDateTime =
+						draft.inspectionDateTime || inspectionDateTime;
 					clientLicensePhoto = draft.clientLicensePhoto || null;
 					clientSignature = draft.clientSignature || null;
 					mileage = draft.mileage || "";
@@ -295,6 +304,23 @@
 		}
 		return count;
 	}
+
+	// Format date and time to dd/mm/yyyy HH:MM
+	function formatDateTime(dateTimeStr) {
+		if (!dateTimeStr) return "N/A";
+		try {
+			const d = new Date(dateTimeStr);
+			if (isNaN(d.getTime())) return "N/A";
+			const day = String(d.getDate()).padStart(2, "0");
+			const month = String(d.getMonth() + 1).padStart(2, "0");
+			const year = d.getFullYear();
+			const hours = String(d.getHours()).padStart(2, "0");
+			const minutes = String(d.getMinutes()).padStart(2, "0");
+			return `${day}/${month}/${year} ${hours}:${minutes}`;
+		} catch (e) {
+			return "N/A";
+		}
+	}
 </script>
 
 <svelte:head>
@@ -333,12 +359,8 @@
 					<h2
 						class="text-2xl font-black text-slate-900 dark:text-white"
 					>
-						Nova Inspeção
+						Novo Checklist
 					</h2>
-					<p class="text-sm text-slate-500 dark:text-slate-400">
-						Preencha os detalhes, mapeie os danos e capture a
-						assinatura.
-					</p>
 				</div>
 
 				<!-- Progress Tracker Bar -->
@@ -353,8 +375,12 @@
 								? 'bg-blue-600 text-white shadow-sm'
 								: 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-300'}"
 						>
-							<span class="inline sm:hidden">{item.step}. {item.short}</span>
-							<span class="hidden sm:inline">{item.step}. {item.label}</span>
+							<span class="inline sm:hidden"
+								>{item.step}. {item.short}</span
+							>
+							<span class="hidden sm:inline"
+								>{item.step}. {item.label}</span
+							>
 						</button>
 					{/each}
 				</div>
@@ -371,12 +397,8 @@
 						<h3
 							class="text-lg font-bold text-slate-800 dark:text-slate-200"
 						>
-							Detalhes do Veículo & Cliente
+							Detalhes
 						</h3>
-						<p class="text-xs text-slate-500 dark:text-slate-500">
-							Forneça a placa de registro do veículo e as
-							informações do motorista.
-						</p>
 					</div>
 
 					<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -505,12 +527,8 @@
 						<h3
 							class="text-lg font-bold text-slate-800 dark:text-slate-200"
 						>
-							Status do Interior & Cabine
+							Status do Interior
 						</h3>
-						<p class="text-xs text-slate-500 dark:text-slate-500">
-							Registre a quilometragem do veículo, nível de
-							combustível e itens essenciais presentes na cabine.
-						</p>
 					</div>
 
 					<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -581,7 +599,13 @@
 												: 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'}"
 										>
 											<span class="inline sm:hidden">
-												{level === "0/8" ? "Vazio" : level === "8/8" ? "Cheio" : level === "4/8" ? "Meio" : level}
+												{level === "0/8"
+													? "Vazio"
+													: level === "8/8"
+														? "Cheio"
+														: level === "4/8"
+															? "Meio"
+															: level}
 											</span>
 											<span class="hidden sm:inline">
 												{level === "0/8"
@@ -761,12 +785,8 @@
 						<h3
 							class="text-lg font-bold text-slate-800 dark:text-slate-200"
 						>
-							Mapeamento Interativo de Danos
+							Danos
 						</h3>
-						<p class="text-xs text-slate-500 dark:text-slate-500">
-							Toque em qualquer seção do desenho do carro para
-							registrar danos visuais ou físicos.
-						</p>
 					</div>
 
 					<!-- Insert the visual interactive diagram -->
@@ -809,12 +829,8 @@
 						<h3
 							class="text-lg font-bold text-slate-800 dark:text-slate-200"
 						>
-							Verificação & Assinatura do Cliente
+							Assinatura do Cliente
 						</h3>
-						<p class="text-xs text-slate-500 dark:text-slate-500">
-							Revise o resumo da inspeção e obtenha a assinatura
-							de validação do cliente.
-						</p>
 					</div>
 
 					<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -864,9 +880,7 @@
 									>
 									<span
 										class="text-slate-800 dark:text-slate-300"
-										>{new Date(
-											inspectionDateTime,
-										).toLocaleString()}</span
+										>{formatDateTime(inspectionDateTime)}</span
 									>
 								</div>
 								<div class="flex justify-between">

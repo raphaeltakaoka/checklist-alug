@@ -21,18 +21,58 @@
 
 		// Left Side
 		{ id: "left_fender", name: "Paralama Diant. Esq.", x: "18%", y: "16%" },
-		{ id: "left_front_door", name: "Porta Diant. Esq.", x: "18%", y: "36%" },
-		{ id: "left_front_window", name: "Vidro Diant. Esq.", x: "32%", y: "42%" },
+		{
+			id: "left_front_door",
+			name: "Porta Diant. Esq.",
+			x: "18%",
+			y: "36%",
+		},
+		{
+			id: "left_front_window",
+			name: "Vidro Diant. Esq.",
+			x: "32%",
+			y: "42%",
+		},
 		{ id: "left_rear_door", name: "Porta Tras. Esq.", x: "18%", y: "54%" },
-		{ id: "left_rear_window", name: "Vidro Tras. Esq.", x: "32%", y: "52%" },
-		{ id: "left_rear_quarter", name: "Lateral Tras. Esq.", x: "18%", y: "73%" },
+		{
+			id: "left_rear_window",
+			name: "Vidro Tras. Esq.",
+			x: "32%",
+			y: "52%",
+		},
+		{
+			id: "left_rear_quarter",
+			name: "Lateral Tras. Esq.",
+			x: "18%",
+			y: "73%",
+		},
 
 		// Right Side
-		{ id: "right_fender", name: "Paralama Diant. Dir.", x: "66%", y: "16%" },
-		{ id: "right_front_door", name: "Porta Diant. Dir.", x: "66%", y: "36%" },
-		{ id: "right_front_window", name: "Vidro Diant. Dir.", x: "58%", y: "42%" },
+		{
+			id: "right_fender",
+			name: "Paralama Diant. Dir.",
+			x: "66%",
+			y: "16%",
+		},
+		{
+			id: "right_front_door",
+			name: "Porta Diant. Dir.",
+			x: "66%",
+			y: "36%",
+		},
+		{
+			id: "right_front_window",
+			name: "Vidro Diant. Dir.",
+			x: "58%",
+			y: "42%",
+		},
 		{ id: "right_rear_door", name: "Porta Tras. Dir.", x: "66%", y: "54%" },
-		{ id: "right_rear_window", name: "Vidro Tras. Dir.", x: "58%", y: "52%" },
+		{
+			id: "right_rear_window",
+			name: "Vidro Tras. Dir.",
+			x: "58%",
+			y: "52%",
+		},
 		{
 			id: "right_rear_quarter",
 			name: "Lateral Tras. Dir.",
@@ -98,7 +138,7 @@
 	function getSVGPartColor(partId) {
 		const state = partStates[partId];
 		if (!state || state.status === "none") {
-			if (partId.endsWith('_wheel')) {
+			if (partId.endsWith("_wheel")) {
 				return "fill-slate-700 dark:fill-slate-950 stroke-slate-400 dark:stroke-slate-700 hover:fill-slate-650 dark:hover:fill-slate-900";
 			}
 			return "fill-slate-100/60 dark:fill-slate-800/50 stroke-slate-300 dark:stroke-slate-600 hover:fill-slate-200/50 dark:hover:fill-slate-700/50";
@@ -116,14 +156,14 @@
 </script>
 
 <div
-	class="flex flex-col lg:flex-row items-center justify-center gap-4 lg:gap-8 p-2 sm:p-6 bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800/80 shadow-md dark:shadow-none rounded-xl sm:rounded-2xl backdrop-blur-xl"
+	class="w-full flex flex-col lg:flex-row items-stretch lg:items-start justify-center gap-6 lg:gap-10 p-0 bg-transparent border-transparent shadow-none"
 >
 	<!-- Visual Blueprint (SVG) -->
 	<div
-		class="relative w-full max-w-[750px] aspect-[1/2] p-0 sm:p-4 flex items-center justify-center"
+		class="relative w-full max-w-[450px] aspect-2/5 p-0 flex items-center justify-center mx-auto"
 	>
 		<!-- Dynamic Interactive Car SVG Outline -->
-		<svg viewBox="0 0 200 400" class="w-full h-full select-none">
+		<svg viewBox="20 0 160 400" class="w-full h-full select-none">
 			<!-- Main Car Chassis Body Shadow -->
 			<rect
 				x="35"
@@ -517,10 +557,7 @@
 		<h3
 			class="text-lg font-bold text-slate-800 dark:text-slate-200 mb-4 flex items-center justify-between"
 		>
-			<span>Partes do Carro & Status de Danos</span>
-			<span class="text-xs font-normal text-slate-500 dark:text-slate-400"
-				>Clique para editar detalhes</span
-			>
+			<span>Partes do Carro</span>
 		</h3>
 
 		<div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
