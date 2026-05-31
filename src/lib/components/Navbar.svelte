@@ -21,13 +21,13 @@
 
 <!-- Top Premium Navbar -->
 <header
-	class="border-b border-slate-200 bg-white/70 dark:border-slate-900 dark:bg-slate-900/60 backdrop-blur-md sticky top-0 z-40 px-4 sm:px-6 py-4 flex justify-between items-center print:hidden"
+	class="border-b border-slate-200 bg-white/70 backdrop-blur-md sticky top-0 z-40 px-4 sm:px-6 py-4 flex justify-between items-center print:hidden"
 >
 	<div class="flex items-center gap-3">
 		<!-- Hamburger Menu Trigger -->
 		<button
 			onclick={() => (isMenuOpen = true)}
-			class="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white rounded-xl transition-all cursor-pointer flex items-center justify-center border border-transparent hover:border-slate-200 dark:hover:border-slate-700 shadow-2xs hover:shadow-xs"
+			class="p-2 hover:bg-slate-100 :bg-slate-800 text-slate-600 hover:text-slate-900 :text-white rounded-xl transition-all cursor-pointer flex items-center justify-center border border-transparent hover:border-slate-200 :border-slate-700 shadow-2xs hover:shadow-xs"
 			aria-label="Abrir menu"
 		>
 			<svg
@@ -57,7 +57,7 @@
 		</div>
 		<div>
 			<h1
-				class="text-md font-extrabold tracking-tight text-slate-900 dark:text-white leading-none"
+				class="text-md font-extrabold tracking-tight text-slate-900 leading-none"
 			>
 				Checklist Alug
 			</h1>
@@ -68,7 +68,7 @@
 		{#if showDashboard}
 			<button
 				onclick={() => goto("/dashboard")}
-				class="px-3 sm:px-4 py-2 text-xs sm:text-sm bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white rounded-xl transition-all cursor-pointer font-medium"
+				class="px-3 sm:px-4 py-2 text-xs sm:text-sm bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-600 hover:text-slate-900 :text-white rounded-xl transition-all cursor-pointer font-medium"
 			>
 				Painel
 			</button>
@@ -92,11 +92,11 @@
 	<!-- Drawer panel -->
 	<div
 		transition:fly={{ x: -300, duration: 300 }}
-		class="fixed top-0 left-0 bottom-0 z-50 w-72 max-w-[80vw] bg-white dark:bg-slate-900 shadow-2xl border-r border-slate-200 dark:border-slate-800 flex flex-col print:hidden"
+		class="fixed top-0 left-0 bottom-0 z-50 w-72 max-w-[80vw] bg-white shadow-2xl border-r border-slate-200 flex flex-col print:hidden"
 	>
 		<!-- Drawer Header -->
 		<div
-			class="p-5 border-b border-slate-150 dark:border-slate-800 flex items-center justify-between"
+			class="p-5 border-b border-slate-150 flex items-center justify-between"
 		>
 			<div class="flex items-center gap-3">
 				<div
@@ -109,7 +109,7 @@
 					/>
 				</div>
 				<h2
-					class="text-xs font-black tracking-widest text-slate-400 dark:text-slate-500 uppercase"
+					class="text-xs font-black tracking-widest text-slate-400 uppercase"
 				>
 					Menu
 				</h2>
@@ -118,7 +118,7 @@
 			<!-- Premium Close Button -->
 			<button
 				onclick={() => (isMenuOpen = false)}
-				class="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-xl transition-all cursor-pointer flex items-center justify-center border border-transparent hover:border-slate-200 dark:hover:border-slate-750"
+				class="p-2 hover:bg-slate-100 :bg-slate-800 text-slate-400 hover:text-slate-700 :text-slate-200 rounded-xl transition-all cursor-pointer flex items-center justify-center border border-transparent hover:border-slate-200 :border-slate-750"
 				aria-label="Fechar menu"
 			>
 				<svg
@@ -145,7 +145,7 @@
 					isMenuOpen = false;
 					goto("/dashboard");
 				}}
-				class="w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl text-slate-700 hover:text-blue-600 dark:text-slate-300 dark:hover:text-white bg-slate-50 hover:bg-blue-50/40 dark:bg-slate-950/20 dark:hover:bg-blue-950/10 border border-slate-150/40 dark:border-slate-850 hover:border-blue-100 dark:hover:border-blue-950 font-bold transition-all text-sm text-left cursor-pointer group active:scale-[0.98]"
+				class="w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl text-slate-700 hover:text-primary bg-slate-50 hover:bg-slate-100 border border-slate-200/50 hover:border-slate-350 font-bold transition-all text-sm text-left cursor-pointer group active:scale-[0.98]"
 			>
 				<span
 					class="text-base group-hover:scale-110 transition-transform"
@@ -157,9 +157,9 @@
 			<button
 				onclick={() => {
 					isMenuOpen = false;
-					goto("/dashboard");
+					goto("/dashboard/checklists");
 				}}
-				class="w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl text-slate-700 hover:text-blue-600 dark:text-slate-300 dark:hover:text-white bg-slate-50 hover:bg-blue-50/40 dark:bg-slate-950/20 dark:hover:bg-blue-950/10 border border-slate-150/40 dark:border-slate-850 hover:border-blue-100 dark:hover:border-blue-950 font-bold transition-all text-sm text-left cursor-pointer group active:scale-[0.98]"
+				class="w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl text-slate-700 hover:text-primary bg-slate-50 hover:bg-slate-100 border border-slate-200/50 hover:border-slate-350 font-bold transition-all text-sm text-left cursor-pointer group active:scale-[0.98]"
 			>
 				<span
 					class="text-base group-hover:scale-110 transition-transform"
@@ -171,11 +171,11 @@
 
 		<!-- Bottom Exit Action -->
 		<div
-			class="p-5 border-t border-slate-150 dark:border-slate-800 bg-slate-550/5 dark:bg-slate-950/10"
+			class="p-5 border-t border-slate-150 bg-slate-500/5"
 		>
 			<button
 				onclick={handleSignOut}
-				class="w-full flex items-center justify-center gap-3 px-4 py-3.5 rounded-2xl text-red-650 hover:text-white dark:text-red-400 dark:hover:text-white bg-red-50 hover:bg-red-600 dark:bg-red-950/15 dark:hover:bg-red-600 border border-red-100 dark:border-red-950/30 hover:border-red-600 dark:hover:border-red-600 font-extrabold transition-all text-sm cursor-pointer group active:scale-[0.98] shadow-xs hover:shadow-md hover:shadow-red-500/10"
+				class="w-full flex items-center justify-center gap-3 px-4 py-3.5 rounded-2xl text-red-600 hover:text-white bg-red-50 hover:bg-red-650 border border-red-100 hover:border-red-650 font-extrabold transition-all text-sm cursor-pointer group active:scale-[0.98] shadow-xs hover:shadow-md hover:shadow-red-500/10"
 			>
 				<span
 					class="text-base group-hover:scale-110 transition-transform"

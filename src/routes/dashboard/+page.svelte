@@ -175,7 +175,7 @@
 </svelte:head>
 
 <div
-	class="min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 flex flex-col font-sans select-none"
+	class="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans select-none"
 >
 	<!-- Top Premium Navbar -->
 	<Navbar />
@@ -186,11 +186,11 @@
 		<div class="space-y-6">
 			<!-- Hero Summary Dashboard -->
 			<div
-				class="bg-linear-to-tr from-white to-slate-100 dark:from-slate-900 dark:to-indigo-950 border border-slate-200 dark:border-slate-900/60 shadow-xl shadow-slate-200/20 dark:shadow-none rounded-3xl p-6 sm:p-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-6"
+				class="bg-white border border-slate-200 shadow-md rounded-3xl p-6 sm:p-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-6"
 			>
 				<div>
 					<h2
-						class="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white leading-tight"
+						class="text-2xl sm:text-3xl font-black text-slate-900 leading-tight"
 					>
 						Bem-vindo, {inspectorName}
 					</h2>
@@ -206,10 +206,10 @@
 							</div>
 						{:else if activeSyncIds.size > 0}
 							<div
-								class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-500/10 text-blue-600 border border-blue-500/25 text-xs font-bold"
+								class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-500/10 text-slate-600 border border-slate-500/25 text-xs font-bold"
 							>
 								<svg
-									class="animate-spin h-3.5 w-3.5 text-blue-650"
+									class="animate-spin h-3.5 w-3.5 text-slate-600"
 									xmlns="http://www.w3.org/2000/svg"
 									fill="none"
 									viewBox="0 0 24 24"
@@ -265,7 +265,7 @@
 
 				<button
 					onclick={startNewInspection}
-					class="w-full md:w-auto px-6 py-3.5 bg-blue-600 hover:bg-blue-500 text-white font-extrabold rounded-2xl transition-all shadow-lg shadow-blue-500/20 hover:shadow-blue-500/30 flex items-center justify-center gap-2 cursor-pointer text-sm"
+					class="w-full md:w-auto px-6 py-3.5 bg-primary hover:bg-primary-hover text-white font-extrabold rounded-2xl transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-2 cursor-pointer text-sm"
 				>
 					<svg
 						xmlns="http://www.w3.org/2000/svg"
@@ -292,7 +292,7 @@
 				>
 					<div>
 						<h3
-							class="text-lg font-bold text-slate-800 dark:text-slate-200"
+							class="text-lg font-bold text-slate-800"
 						>
 							Relatórios Anteriores
 						</h3>
@@ -307,11 +307,11 @@
 							type="text"
 							bind:value={searchPlate}
 							placeholder="Buscar por placa ou cliente..."
-							class="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 focus:border-blue-500 dark:focus:border-blue-500 rounded-xl pl-10 pr-4 py-2.5 text-slate-800 dark:text-slate-200 outline-none transition-all placeholder:text-slate-400 dark:placeholder:text-slate-600 text-sm"
+							class="w-full bg-white border border-slate-200 focus:border-primary rounded-xl pl-10 pr-4 py-2.5 text-slate-800 outline-none transition-all placeholder:text-slate-400 text-sm"
 						/>
 						<svg
 							xmlns="http://www.w3.org/2000/svg"
-							class="h-4.5 w-4.5 text-slate-400 dark:text-slate-600 absolute left-3 top-3.5"
+							class="h-4.5 w-4.5 text-slate-400 absolute left-3 top-3.5"
 							fill="none"
 							viewBox="0 0 24 24"
 							stroke="currentColor"
@@ -329,16 +329,16 @@
 				{#if filteredInspections.length === 0}
 					<!-- Empty dashboard state -->
 					<div
-						class="p-12 border border-dashed border-slate-300 dark:border-slate-900 bg-white dark:bg-slate-900/10 rounded-3xl text-center space-y-4"
+						class="p-12 border border-dashed border-slate-300 bg-white rounded-3xl text-center space-y-4"
 					>
 						<div
-							class="w-12 h-12 bg-slate-100 dark:bg-slate-900 rounded-2xl flex items-center justify-center mx-auto text-slate-400 dark:text-slate-600"
+							class="w-12 h-12 bg-slate-100 rounded-2xl flex items-center justify-center mx-auto text-slate-400"
 						>
 							📄
 						</div>
 						<div class="space-y-1">
 							<h4
-								class="text-base font-bold text-slate-800 dark:text-slate-300"
+								class="text-base font-bold text-slate-800"
 							>
 								Nenhuma inspeção encontrada
 							</h4>
@@ -354,19 +354,19 @@
 					<div
 						class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
 					>
-						{#each filteredInspections as rep}
+						{#each filteredInspections as rep (rep.id)}
 							<div
-								class="bg-white hover:bg-slate-50/50 dark:bg-slate-900/30 dark:hover:bg-slate-900/60 border border-slate-200 dark:border-slate-900 hover:border-slate-300 dark:hover:border-slate-800 shadow-sm hover:shadow-md dark:shadow-none rounded-2xl p-5 transition-all flex flex-col justify-between group relative overflow-hidden"
+								class="bg-white hover:bg-slate-50/50 :bg-slate-900/60 border border-slate-200 hover:border-slate-300 :border-slate-800 shadow-sm hover:shadow-md rounded-2xl p-5 transition-all flex flex-col justify-between group relative overflow-hidden"
 							>
 								<!-- License plate display -->
 								<div class="flex justify-between items-start">
 									<div>
 										<span
-											class="text-[10px] text-blue-600 dark:text-blue-500 uppercase tracking-widest font-extrabold"
+											class="text-[10px] text-slate-500 uppercase tracking-widest font-extrabold"
 											>Placa do Veículo</span
 										>
 										<h4
-											class="text-xl font-black text-slate-900 dark:text-white uppercase tracking-wider mt-0.5"
+											class="text-xl font-black text-slate-900 uppercase tracking-wider mt-0.5"
 										>
 											{rep.licensePlate}
 										</h4>
@@ -378,13 +378,13 @@
 									>
 										{#if rep.status === "draft"}
 											<span
-												class="px-2 py-0.5 text-[9px] font-black uppercase rounded border bg-amber-50 dark:bg-amber-950/20 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-800/50"
+												class="px-2 py-0.5 text-[9px] font-black uppercase rounded border bg-amber-50 text-amber-600 border-amber-200"
 											>
 												📝 Rascunho
 											</span>
 										{:else}
 											<span
-												class="px-2 py-0.5 text-[9px] font-black uppercase rounded border bg-emerald-50 dark:bg-emerald-950/20 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800/50"
+												class="px-2 py-0.5 text-[9px] font-black uppercase rounded border bg-emerald-50 text-emerald-600 border-emerald-200"
 											>
 												✅ Concluído
 											</span>
@@ -392,16 +392,16 @@
 											<!-- Cloud Sync status badge -->
 											{#if rep.synced}
 												<span
-													class="px-2 py-0.5 text-[9px] uppercase rounded border bg-blue-50 dark:bg-blue-950/20 text-blue-650 dark:text-blue-400 border-blue-200 dark:border-blue-805/50 flex items-center gap-1 font-extrabold"
+													class="px-2 py-0.5 text-[9px] uppercase rounded border bg-slate-50 text-slate-700 border-slate-200 flex items-center gap-1 font-extrabold"
 												>
 													☁️ Sincronizado
 												</span>
 											{:else if activeSyncIds.has(rep.id)}
 												<span
-													class="px-2 py-0.5 text-[9px] uppercase rounded border bg-blue-500/10 text-blue-600 border-blue-500/20 flex items-center gap-1 animate-pulse font-extrabold"
+													class="px-2 py-0.5 text-[9px] uppercase rounded border bg-slate-500/10 text-slate-600 border-slate-500/20 flex items-center gap-1 animate-pulse font-extrabold"
 												>
 													<svg
-														class="animate-spin h-2 w-2 text-blue-600"
+														class="animate-spin h-2 w-2 text-slate-650"
 														xmlns="http://www.w3.org/2000/svg"
 														fill="none"
 														viewBox="0 0 24 24"
@@ -430,7 +430,7 @@
 												</span>
 											{:else}
 												<span
-													class="px-2 py-0.5 text-[9px] font-black uppercase rounded border bg-slate-100 dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-700 flex items-center gap-1"
+													class="px-2 py-0.5 text-[9px] font-black uppercase rounded border bg-slate-100 text-slate-500 border-slate-200 flex items-center gap-1"
 												>
 													🕒 Na Fila
 												</span>
@@ -438,10 +438,7 @@
 										{/if}
 										{#if rep.inspectionType}
 											<span
-												class="px-2 py-0.5 text-[9px] font-black uppercase rounded border {rep.inspectionType ===
-												'Entrega'
-													? 'bg-blue-50 dark:bg-blue-950/20 text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-800/50'
-													: 'bg-emerald-50 dark:bg-emerald-950/20 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800/50'}"
+												class="px-2 py-0.5 text-[9px] font-black uppercase rounded border {rep.inspectionType === 'Entrega' ? 'bg-slate-100 text-slate-800 border-slate-200 ' : 'bg-emerald-50 text-emerald-600 border-emerald-200 '}"
 											>
 												{rep.inspectionType ===
 												"Entrega"
@@ -450,7 +447,7 @@
 											</span>
 										{/if}
 										<span
-											class="px-2.5 py-1 text-[10px] font-black uppercase rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-amber-600 dark:text-amber-400"
+											class="px-2.5 py-1 text-[10px] font-black uppercase rounded-lg bg-slate-50 border border-slate-200 text-amber-600"
 										>
 											{countDamages(rep.partStates)} Danos
 										</span>
@@ -459,35 +456,35 @@
 
 								<!-- Client and date details -->
 								<div
-									class="my-5 space-y-2 text-xs border-t border-slate-100 dark:border-slate-900 pt-4"
+									class="my-5 space-y-2 text-xs border-t border-slate-100 pt-4"
 								>
 									<div class="flex justify-between">
 										<span
-											class="text-slate-500 dark:text-slate-600"
+											class="text-slate-500"
 											>Cliente:</span
 										>
 										<span
-											class="font-semibold text-slate-700 dark:text-slate-300"
+											class="font-semibold text-slate-700"
 											>{rep.clientName}</span
 										>
 									</div>
 									<div class="flex justify-between">
 										<span
-											class="text-slate-500 dark:text-slate-600"
+											class="text-slate-500"
 											>Inspetor:</span
 										>
 										<span
-											class="text-slate-600 dark:text-slate-400"
+											class="text-slate-600"
 											>{rep.inspectorName || "N/A"}</span
 										>
 									</div>
 									<div class="flex justify-between">
 										<span
-											class="text-slate-500 dark:text-slate-600"
+											class="text-slate-500"
 											>Data:</span
 										>
 										<span
-											class="text-slate-600 dark:text-slate-400"
+											class="text-slate-600"
 											>{(() => {
 												const d = new Date(
 													rep.inspectionDateTime,
@@ -529,7 +526,7 @@
 												goto(
 													"/dashboard/new/" + rep.id,
 												)}
-											class="flex-1 py-2 text-center text-xs font-bold text-white bg-blue-600 hover:bg-blue-500 rounded-xl transition-all cursor-pointer"
+											class="flex-1 py-2 text-center text-xs font-bold text-white bg-primary hover:bg-primary-hover rounded-xl transition-all cursor-pointer shadow-sm hover:shadow"
 										>
 											Ver / Imprimir Detalhes
 										</button>
@@ -540,7 +537,7 @@
 											e.stopPropagation();
 											triggerDelete(rep.id);
 										}}
-										class="px-3 py-2 bg-slate-50 hover:bg-red-50 dark:bg-slate-950 dark:hover:bg-red-950/20 text-slate-500 dark:text-slate-600 hover:text-red-600 dark:hover:text-red-400 border border-slate-200 dark:border-slate-900 rounded-xl transition-all cursor-pointer text-xs"
+										class="px-3 py-2 bg-slate-50 hover:bg-red-50 :bg-red-950/20 text-slate-500 hover:text-red-600 :text-red-400 border border-slate-200 rounded-xl transition-all cursor-pointer text-xs"
 										title="Excluir inspeção"
 									>
 										✕
@@ -549,7 +546,7 @@
 
 								<!-- Ambient hover background gradient -->
 								<div
-									class="absolute inset-0 rounded-2xl bg-linear-to-tr from-blue-500/2 to-transparent opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"
+									class="absolute inset-0 rounded-2xl bg-linear-to-tr from-neutral-500/2 to-transparent opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"
 								></div>
 							</div>
 						{/each}
@@ -561,7 +558,7 @@
 
 	<!-- Footer -->
 	<footer
-		class="border-t border-slate-200 dark:border-slate-900 py-6 text-center text-xs text-slate-500 dark:text-slate-600 mt-12 print:hidden"
+		class="border-t border-slate-200 py-6 text-center text-xs text-slate-500 mt-12 print:hidden"
 	>
 		<p>© 2026 Checklist Alug. Executando localmente no navegador.</p>
 	</footer>
@@ -572,16 +569,16 @@
 		class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/40 backdrop-blur-md transition-all duration-300"
 	>
 		<div
-			class="w-full max-w-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl rounded-3xl p-6 space-y-6 transform scale-100 transition-all"
+			class="w-full max-w-sm bg-white border border-slate-200 shadow-2xl rounded-3xl p-6 space-y-6 transform scale-100 transition-all"
 		>
 			<div class="text-center space-y-3">
 				<div
-					class="w-12 h-12 bg-red-50 dark:bg-red-950/20 rounded-2xl flex items-center justify-center mx-auto text-red-500 text-xl font-bold"
+					class="w-12 h-12 bg-red-50 rounded-2xl flex items-center justify-center mx-auto text-red-500 text-xl font-bold"
 				>
 					⚠️
 				</div>
 				<h3
-					class="text-lg font-bold text-slate-800 dark:text-slate-200"
+					class="text-lg font-bold text-slate-800"
 				>
 					Excluir Inspeção
 				</h3>
@@ -593,7 +590,7 @@
 			<div class="flex gap-3">
 				<button
 					onclick={cancelDelete}
-					class="flex-1 py-3 text-center text-xs font-bold text-slate-700 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-800/80 rounded-xl transition-all cursor-pointer border border-slate-200 dark:border-transparent"
+					class="flex-1 py-3 text-center text-xs font-bold text-slate-700 hover:text-slate-900 :text-white bg-slate-100 hover:bg-slate-200 :bg-slate-800/80 rounded-xl transition-all cursor-pointer border border-slate-200"
 					disabled={isDeleting}
 				>
 					Cancelar

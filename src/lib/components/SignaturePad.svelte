@@ -115,7 +115,7 @@
 </script>
 
 <div class="flex flex-col gap-3 w-full">
-	<div class="relative w-full h-[180px] bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden focus-within:ring-2 focus-within:ring-blue-500">
+	<div class="relative w-full h-[180px] bg-slate-50 border border-slate-200 rounded-xl overflow-hidden focus-within:ring-2 focus-within:ring-blue-500">
 		<canvas
 			bind:this={canvas}
 			onmousedown={startDrawing}
@@ -126,16 +126,16 @@
 		></canvas>
 
 		{#if !signature}
-			<div class="absolute inset-0 flex items-center justify-center pointer-events-none text-sm text-slate-400 dark:text-slate-500 font-medium">
+			<div class="absolute inset-0 flex items-center justify-center pointer-events-none text-sm text-slate-400 font-medium">
 				Assine aqui com o dedo ou mouse
 			</div>
 		{/if}
 	</div>
 
 	<div class="flex justify-between items-center">
-		<span class="text-xs text-slate-500 dark:text-slate-400">
+		<span class="text-xs text-slate-500">
 			{#if signature}
-				<span class="text-emerald-600 dark:text-emerald-400 font-semibold">✓ Assinatura Capturada</span>
+				<span class="text-emerald-600 font-semibold">✓ Assinatura Capturada</span>
 			{:else}
 				Aguardando assinatura
 			{/if}
@@ -144,7 +144,7 @@
 		<button
 			type="button"
 			onclick={clearCanvas}
-			class="px-3 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-750 rounded-lg transition-all cursor-pointer"
+			class="px-3 py-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 :text-white bg-slate-100 hover:bg-slate-200 :bg-slate-700 border border-slate-200 rounded-lg transition-all cursor-pointer"
 		>
 			Limpar Assinatura
 		</button>

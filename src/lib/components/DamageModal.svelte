@@ -109,7 +109,8 @@
 			scratch: "RISCO",
 			dent: "AMASSADO",
 			crack: "TRINCADO",
-			broken: "QUEBRADO"
+			broken: "QUEBRADO",
+			damaged: "DANIFICADO",
 		};
 		const displayStatus = statusLabels[status] || status.toUpperCase();
 
@@ -125,7 +126,9 @@
 				? "#ef4444"
 				: status === "none"
 					? "#10b981"
-					: "#f59e0b";
+					: status === "damaged"
+						? "#6366f1"
+						: "#f59e0b";
 		ctx.lineWidth = 5;
 		ctx.strokeRect(40, 200, 560, 240);
 
@@ -230,27 +233,27 @@
 {#if partId}
 	<!-- Backdrop overlay -->
 	<div
-		class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 dark:bg-slate-950/80 backdrop-blur-md transition-opacity duration-300"
+		class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-md transition-opacity duration-300"
 		onclick={close}
 		role="presentation"
 	>
 		<!-- Modal Content Card -->
 		<div
-			class="w-full max-w-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh] transition-all scale-100"
+			class="w-full max-w-2xl bg-white border border-slate-200 rounded-3xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh] transition-all scale-100"
 			onclick={(e) => e.stopPropagation()}
 			role="presentation"
 		>
 			<!-- Modal Header -->
 			<div
-				class="px-6 py-5 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-slate-950/40"
+				class="px-6 py-5 border-b border-slate-100 flex justify-between items-center bg-slate-50"
 			>
 				<div>
 					<span
-						class="text-xs font-bold text-blue-600 dark:text-blue-500 uppercase tracking-widest"
+						class="text-xs font-bold text-blue-600 uppercase tracking-widest"
 						>Detalhes da Inspeção</span
 					>
 					<h2
-						class="text-xl font-bold text-slate-900 dark:text-slate-100 mt-0.5"
+						class="text-xl font-bold text-slate-900 mt-0.5"
 					>
 						{partName}
 					</h2>
@@ -258,7 +261,7 @@
 				<button
 					type="button"
 					onclick={close}
-					class="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 transition-colors cursor-pointer"
+					class="p-2 hover:bg-slate-100 :bg-slate-800 rounded-full text-slate-500 hover:text-slate-900 :text-slate-200 transition-colors cursor-pointer"
 					aria-label="Close"
 				>
 					<svg
@@ -283,24 +286,20 @@
 				<!-- Damage Status Select -->
 				<div>
 					<label
-						class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3"
+						class="block text-sm font-semibold text-slate-700 mb-3"
 						for="damage-status"
 					>
 						Status do Dano
 					</label>
 					<div
-						class="flex flex-wrap gap-2 sm:grid sm:grid-cols-5"
+						class="flex flex-wrap gap-2 sm:grid sm:grid-cols-6"
 						id="damage-status"
 					>
-						{#each [{ val: "none", label: "Sem Danos", color: "border-emerald-500 text-emerald-600 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-500/10", active: "bg-emerald-50 dark:bg-emerald-500/20 border-emerald-500 text-emerald-800 dark:text-emerald-300" }, { val: "scratch", label: "Risco", color: "border-amber-500 text-amber-600 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-500/10", active: "bg-amber-50 dark:bg-amber-500/20 border-amber-500 text-amber-800 dark:text-emerald-300" }, { val: "dent", label: "Amassado", color: "border-orange-500 text-orange-600 hover:bg-orange-50 dark:text-orange-400 dark:hover:bg-orange-500/10", active: "bg-orange-50 dark:bg-orange-500/20 border-orange-500 text-orange-800 dark:text-emerald-300" }, { val: "crack", label: "Trincado", color: "border-purple-500 text-purple-600 hover:bg-purple-50 dark:text-purple-400 dark:hover:bg-purple-500/10", active: "bg-purple-50 dark:bg-purple-500/20 border-purple-500 text-purple-800 dark:text-emerald-300" }, { val: "broken", label: "Quebrado", color: "border-red-500 text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-500/10", active: "bg-red-50 dark:bg-red-500/20 border-red-500 text-red-800 dark:text-emerald-300" }] as option}
+						{#each [{ val: "none", label: "Sem Danos", color: "border-emerald-500 text-emerald-600 hover:bg-emerald-50  :bg-emerald-500/10", active: "bg-emerald-50  border-emerald-500 text-emerald-800 " }, { val: "scratch", label: "Risco", color: "border-amber-500 text-amber-600 hover:bg-amber-50  :bg-amber-500/10", active: "bg-amber-50  border-amber-500 text-amber-800 " }, { val: "dent", label: "Amassado", color: "border-orange-500 text-orange-600 hover:bg-orange-50  :bg-orange-500/10", active: "bg-orange-50  border-orange-500 text-orange-800 " }, { val: "crack", label: "Trincado", color: "border-purple-500 text-purple-600 hover:bg-purple-50  :bg-purple-500/10", active: "bg-purple-50  border-purple-500 text-purple-800 " }, { val: "broken", label: "Quebrado", color: "border-red-500 text-red-600 hover:bg-red-50  :bg-red-500/10", active: "bg-red-50  border-red-500 text-red-800 " }, { val: "damaged", label: "Danificado", color: "border-indigo-500 text-indigo-600 hover:bg-indigo-50  :bg-indigo-500/10", active: "bg-indigo-50  border-indigo-500 text-indigo-800 " }] as option}
 							<button
 								type="button"
 								onclick={() => (status = option.val)}
-								class="grow sm:grow-0 px-3 py-2.5 rounded-xl border text-sm font-bold transition-all text-center cursor-pointer min-w-[100px] {status ===
-								option.val
-									? option.active
-									: 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/40 text-slate-500 dark:text-slate-400 ' +
-										option.color}"
+								class="grow sm:grow-0 px-3 py-2.5 rounded-xl border text-sm font-bold transition-all text-center cursor-pointer min-w-[100px] {status === option.val ? option.active : 'border-slate-200 bg-slate-50 text-slate-500 ' + option.color}"
 							>
 								{option.label}
 							</button>
@@ -313,7 +312,7 @@
 					<div class="flex justify-between items-center mb-3">
 						<label
 							for="photos"
-							class="block text-sm font-semibold text-slate-700 dark:text-slate-300"
+							class="block text-sm font-semibold text-slate-700"
 						>
 							Fotos ({photos.length})
 						</label>
@@ -322,7 +321,7 @@
 							<button
 								type="button"
 								onclick={generateMockPhoto}
-								class="px-2.5 py-1 text-xs bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-blue-600 dark:text-blue-400 rounded-lg border border-slate-200 dark:border-slate-700 font-semibold cursor-pointer"
+								class="px-2.5 py-1 text-xs bg-slate-100 hover:bg-slate-200 :bg-slate-700 text-blue-600 rounded-lg border border-slate-200 font-semibold cursor-pointer"
 								title="Simula a captura da câmera para testes no computador"
 							>
 								⚡ Simular Foto
@@ -344,7 +343,7 @@
 					<!-- Real Live Camera Feed in Modal -->
 					{#if showCamera}
 						<div
-							class="relative rounded-2xl overflow-hidden bg-black border border-slate-200 dark:border-slate-800 mb-4 aspect-4/3 flex flex-col items-center justify-center"
+							class="relative rounded-2xl overflow-hidden bg-black border border-slate-200 mb-4 aspect-4/3 flex flex-col items-center justify-center"
 						>
 							<video
 								bind:this={videoElement}
@@ -362,7 +361,7 @@
 									<select
 										bind:value={selectedCameraId}
 										onchange={initStream}
-										class="bg-white dark:bg-slate-900/90 text-xs text-slate-800 dark:text-white border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 outline-none max-w-[150px]"
+										class="bg-white text-xs text-slate-800 border border-slate-200 rounded-lg px-2 py-1 outline-none max-w-[150px]"
 									>
 										{#each cameras as camera}
 											<option value={camera.deviceId}
@@ -418,7 +417,7 @@
 										activePreviewIndex = i;
 									}
 								}}
-								class="relative aspect-square bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden group cursor-pointer text-left focus:outline-none focus:ring-2 focus:ring-blue-500"
+								class="relative aspect-square bg-slate-100 border border-slate-200 rounded-2xl overflow-hidden group cursor-pointer text-left focus:outline-none focus:ring-2 focus:ring-blue-500"
 							>
 								<img
 									src={photo}
@@ -455,11 +454,11 @@
 						{/each}
 						<!-- Upload Area Card -->
 						<label
-							class="border-2 border-dashed border-slate-200 hover:border-blue-500/65 dark:border-slate-800 dark:hover:border-blue-500/60 bg-slate-50 dark:bg-slate-900/20 hover:bg-slate-100 dark:hover:bg-slate-900/40 rounded-2xl aspect-square flex flex-col items-center justify-center cursor-pointer transition-all gap-1.5 text-center px-2"
+							class="border-2 border-dashed border-slate-200 hover:border-blue-500/65 :border-blue-500/60 bg-slate-50 hover:bg-slate-100 :bg-slate-900/40 rounded-2xl aspect-square flex flex-col items-center justify-center cursor-pointer transition-all gap-1.5 text-center px-2"
 						>
 							<svg
 								xmlns="http://www.w3.org/2000/svg"
-								class="h-6 w-6 text-slate-400 dark:text-slate-500"
+								class="h-6 w-6 text-slate-400"
 								fill="none"
 								viewBox="0 0 24 24"
 								stroke="currentColor"
@@ -472,7 +471,7 @@
 								/>
 							</svg>
 							<span
-								class="text-xs font-semibold text-slate-500 dark:text-slate-400"
+								class="text-xs font-semibold text-slate-500"
 								>Enviar Foto</span
 							>
 							<input
@@ -530,7 +529,7 @@
 				<!-- Comments Notes Section -->
 				<div>
 					<label
-						class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2"
+						class="block text-sm font-semibold text-slate-700 mb-2"
 						for="inspection-comments"
 					>
 						Comentários / Observações do Inspetor
@@ -538,20 +537,20 @@
 					<textarea
 						id="inspection-comments"
 						bind:value={comments}
-						placeholder="Descreva riscos específicos, amassados, necessidade de substituição de peças ou outras observações..."
-						class="w-full h-28 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 focus:border-blue-500 dark:focus:border-blue-500 rounded-2xl p-4 text-slate-900 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-600 focus:ring-1 focus:ring-blue-500 outline-none resize-none transition-all text-sm"
+						placeholder="Descreva o dano"
+						class="w-full h-28 bg-slate-50 border border-slate-200 focus:border-blue-500 :border-blue-500 rounded-2xl p-4 text-slate-900 placeholder-slate-400 focus:ring-1 focus:ring-blue-500 outline-none resize-none transition-all text-sm"
 					></textarea>
 				</div>
 			</div>
 
 			<!-- Modal Footer -->
 			<div
-				class="px-6 py-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/40 flex justify-between items-center"
+				class="px-6 py-4 border-t border-slate-100 bg-slate-50 flex justify-between items-center"
 			>
 				<button
 					type="button"
 					onclick={close}
-					class="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold rounded-xl transition-all cursor-pointer text-sm border border-slate-200 dark:border-transparent"
+					class="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 :bg-slate-700 text-slate-600 font-bold rounded-xl transition-all cursor-pointer text-sm border border-slate-200"
 				>
 					Cancelar
 				</button>
