@@ -14,6 +14,9 @@
 	let photos = $state([]);
 	let activePreviewIndex = $state(null);
 
+	// Validation derived state
+	let hasValidationWarning = $derived(status === "none" && (comments.trim() !== "" || photos.length > 0));
+
 	// Update local states when partId changes
 	$effect(() => {
 		if (partId && partStates) {
@@ -37,6 +40,7 @@
 
 	// Save changes back to partStates
 	function save() {
+		if (hasValidationWarning) return;
 		partStates[partId] = {
 			status,
 			comments,
@@ -166,6 +170,74 @@
 
 					<!-- Thumbnails Container -->
 					<div class="grid grid-cols-3 sm:grid-cols-4 gap-3">
+						<!-- Usar Câmera Card -->
+						<label
+							class="border-2 border-dashed border-slate-200 hover:border-blue-500/65 bg-slate-50 hover:bg-slate-100 rounded-2xl aspect-square flex flex-col items-center justify-center cursor-pointer transition-all gap-1.5 text-center px-2"
+						>
+							<svg
+								xmlns="http://www.w3.org/2000/svg"
+								class="h-6 w-6 text-slate-400"
+								fill="none"
+								viewBox="0 0 24 24"
+								stroke="currentColor"
+							>
+								<path
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									stroke-width="1.5"
+									d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"
+								/>
+								<path
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									stroke-width="1.5"
+									d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"
+								/>
+							</svg>
+							<span
+								class="text-xs font-semibold text-slate-500"
+								>Tirar Foto</span
+							>
+							<input
+								type="file"
+								accept="image/*"
+								capture="environment"
+								class="hidden"
+								onchange={handleFileUpload}
+							/>
+						</label>
+
+						<!-- Escolher da Galeria Card -->
+						<label
+							class="border-2 border-dashed border-slate-200 hover:border-blue-500/65 bg-slate-50 hover:bg-slate-100 rounded-2xl aspect-square flex flex-col items-center justify-center cursor-pointer transition-all gap-1.5 text-center px-2"
+						>
+							<svg
+								xmlns="http://www.w3.org/2000/svg"
+								class="h-6 w-6 text-slate-400"
+								fill="none"
+								viewBox="0 0 24 24"
+								stroke="currentColor"
+							>
+								<path
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									stroke-width="1.5"
+									d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+								/>
+							</svg>
+							<span
+								class="text-xs font-semibold text-slate-500"
+								>Galeria</span
+							>
+							<input
+								type="file"
+								accept="image/*"
+								multiple
+								class="hidden"
+								onchange={handleFileUpload}
+							/>
+						</label>
+
 						{#each photos as photo, i (photo)}
 							<div
 								role="button"
@@ -212,36 +284,6 @@
 								</button>
 							</div>
 						{/each}
-						<!-- Upload Area Card -->
-						<label
-							class="border-2 border-dashed border-slate-200 hover:border-blue-500/65 :border-blue-500/60 bg-slate-50 hover:bg-slate-100 :bg-slate-900/40 rounded-2xl aspect-square flex flex-col items-center justify-center cursor-pointer transition-all gap-1.5 text-center px-2"
-						>
-							<svg
-								xmlns="http://www.w3.org/2000/svg"
-								class="h-6 w-6 text-slate-400"
-								fill="none"
-								viewBox="0 0 24 24"
-								stroke="currentColor"
-							>
-								<path
-									stroke-linecap="round"
-									stroke-linejoin="round"
-									stroke-width="2"
-									d="M12 4v16m8-8H4"
-								/>
-							</svg>
-							<span
-								class="text-xs font-semibold text-slate-500"
-								>Enviar Foto</span
-							>
-							<input
-								type="file"
-								accept="image/*"
-								multiple
-								class="hidden"
-								onchange={handleFileUpload}
-							/>
-						</label>
 					</div>
 				</div>
 
@@ -301,6 +343,17 @@
 						class="w-full h-28 bg-slate-50 border border-slate-200 focus:border-blue-500 :border-blue-500 rounded-2xl p-4 text-slate-900 placeholder-slate-400 focus:ring-1 focus:ring-blue-500 outline-none resize-none transition-all text-sm"
 					></textarea>
 				</div>
+
+				{#if hasValidationWarning}
+					<div class="p-4 bg-rose-50 border border-rose-200 rounded-2xl flex items-start gap-3 animate-fade-in shadow-sm">
+						<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-rose-500 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+						</svg>
+						<div class="text-sm text-rose-800 leading-relaxed font-semibold">
+							Atenção: Selecione um status de dano diferente de "Sem Danos" ao adicionar fotos ou comentários.
+						</div>
+					</div>
+				{/if}
 			</div>
 
 			<!-- Modal Footer -->
@@ -318,7 +371,8 @@
 				<button
 					type="button"
 					onclick={save}
-					class="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl transition-all shadow-lg shadow-blue-500/20 hover:shadow-blue-500/30 cursor-pointer text-sm"
+					disabled={hasValidationWarning}
+					class="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none disabled:cursor-not-allowed text-white font-bold rounded-xl transition-all shadow-lg shadow-blue-500/20 hover:shadow-blue-500/30 cursor-pointer text-sm"
 				>
 					Salvar Alterações
 				</button>
