@@ -30,6 +30,7 @@
 	let inspectionDateTime = $state("");
 	let clientLicensePhoto = $state(null);
 	let clientSignature = $state(null);
+	let carDiagramImage = $state(null);
 
 	// Interior & Cabin states
 	let mileage = $state("");
@@ -118,6 +119,7 @@
 					hasChildSeat = draft.hasChildSeat || false;
 					hasEToll = draft.hasEToll || false;
 					partStates = draft.partStates || {};
+					carDiagramImage = draft.carDiagramImage || null;
 					createdAtDate = draft.createdAt || null;
 				}
 			} catch (e) {
@@ -180,10 +182,61 @@
 		clientLicensePhoto = canvas.toDataURL("image/jpeg");
 	}
 
+	function captureCarDiagram() {
+		if (typeof document === "undefined") return;
+		const originalSvg = document.querySelector(".relative svg");
+		if (!originalSvg) return;
+
+		try {
+			// Clone the SVG element to keep it pure
+			const clonedSvg = originalSvg.cloneNode(true);
+
+			// Find all styleable elements in original and cloned SVGs
+			const originalElements = originalSvg.querySelectorAll("path, rect, text, circle");
+			const clonedElements = clonedSvg.querySelectorAll("path, rect, text, circle");
+
+			for (let i = 0; i < originalElements.length; i++) {
+				const orig = originalElements[i];
+				const clone = clonedElements[i];
+				const style = window.getComputedStyle(orig);
+
+				// Apply computed colors and visual properties as inline SVG attributes
+				clone.setAttribute("fill", style.fill);
+				clone.setAttribute("stroke", style.stroke);
+				clone.setAttribute("stroke-width", style.strokeWidth || "1px");
+				clone.setAttribute("opacity", style.opacity || "1");
+
+				// Remove dynamic interactive classes and handlers to keep the saved image static and clean
+				clone.removeAttribute("class");
+				clone.removeAttribute("role");
+				clone.removeAttribute("tabindex");
+				clone.removeAttribute("onclick");
+				clone.removeAttribute("onkeydown");
+			}
+
+			// Capture visual aspect classes/styles of the main SVG container itself
+			clonedSvg.setAttribute("style", "background-color: transparent; max-width: 100%; height: auto;");
+			clonedSvg.removeAttribute("class");
+
+			// Serialize to XML string
+			const serializer = new XMLSerializer();
+			const svgString = serializer.serializeToString(clonedSvg);
+
+			// Convert to data URI
+			carDiagramImage = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svgString);
+		} catch (e) {
+			console.error("Failed to capture car diagram SVG:", e);
+		}
+	}
+
 	async function saveDraft() {
 		if (!licensePlate || !clientName) {
 			alert("Por favor, insira a placa do veículo e o nome do cliente.");
 			return false;
+		}
+
+		if (currentStep === 3) {
+			captureCarDiagram();
 		}
 
 		const newReport = {
@@ -201,6 +254,7 @@
 			hasChildSeat,
 			hasEToll,
 			partStates: { ...partStates },
+			carDiagramImage,
 			createdAt: createdAtDate || new Date().toISOString(),
 			status: "draft",
 		};
@@ -222,6 +276,10 @@
 		// Only save if general info is filled
 		if (!licensePlate || !clientName) return;
 
+		if (currentStep === 3) {
+			captureCarDiagram();
+		}
+
 		const newReport = {
 			id,
 			licensePlate: licensePlate.toUpperCase(),
@@ -237,6 +295,7 @@
 			hasChildSeat,
 			hasEToll,
 			partStates: { ...partStates },
+			carDiagramImage,
 			createdAt: createdAtDate || new Date().toISOString(),
 			status: "draft",
 		};
@@ -289,6 +348,7 @@
 			hasChildSeat,
 			hasEToll,
 			partStates: { ...partStates },
+			carDiagramImage,
 			createdAt: createdAtDate || new Date().toISOString(),
 			status: "completed",
 			synced: false,

@@ -31,6 +31,18 @@
 			const userCredential = await signInWithEmailAndPassword(auth, trimmedEmail, password);
 			const user = userCredential.user;
 
+			// Verify custom claims role
+			const idTokenResult = await user.getIdTokenResult(true);
+			if (!idTokenResult.claims || !idTokenResult.claims.role) {
+				await auth.signOut();
+				errorMessage = 'Acesso negado. Esta conta não possui uma função (role) atribuída no sistema.';
+				hasError = true;
+				isLoading = false;
+				localStorage.removeItem('authenticated');
+				localStorage.removeItem('inspectorName');
+				return;
+			}
+
 			// Sync localStorage for compatibility
 			localStorage.setItem('authenticated', 'true');
 			localStorage.setItem('inspectorName', user.displayName || user.email.split('@')[0]);

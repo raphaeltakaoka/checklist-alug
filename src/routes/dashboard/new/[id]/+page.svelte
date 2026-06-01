@@ -391,12 +391,24 @@
 					</div>
 
 					<!-- Damage mapping details list -->
-					<div class="my-8 space-y-4">
+					<div class="my-8 space-y-6">
 						<h3
 							class="text-xs font-bold text-slate-500 uppercase tracking-widest border-b border-slate-200 pb-1.5 print:border-slate-300"
 						>
 							Laudo de Mapeamento de Danos
 						</h3>
+
+						{#if selectedInspection.carDiagramImage}
+							<!-- Premium Stacked Car Diagram Card -->
+							<div class="flex flex-col items-center justify-center p-6 bg-slate-50 border border-slate-200/80 rounded-3xl print:bg-white print:border-slate-300 max-w-lg mx-auto w-full shadow-xs animate-fade-in">
+								<img
+									src={selectedInspection.carDiagramImage}
+									alt="Mapa de Danos do Veículo"
+									class="w-full h-auto select-none max-h-[350px] object-contain"
+								/>
+								<span class="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-3">Mapa Visual de Danos Registrados</span>
+							</div>
+						{/if}
 
 						{#if countDamages(selectedInspection.partStates) === 0}
 							<div

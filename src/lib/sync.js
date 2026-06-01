@@ -1,7 +1,7 @@
 import { db, storage } from "./firebase.js";
 import { doc, setDoc } from "firebase/firestore";
 import { ref, uploadString, getDownloadURL } from "firebase/storage";
-import { saveInspection } from "./db.js";
+import { deleteInspection } from "./db.js";
 
 /**
  * Helper to upload a base64 photo to Firebase Storage and return its public URL.
@@ -33,6 +33,14 @@ export async function syncInspectionToCloud(inspection) {
 		);
 	}
 
+	// 1.5 Upload car diagram if present
+	if (report.carDiagramImage) {
+		report.carDiagramImage = await uploadPhoto(
+			`checklists/${report.id}/car_diagram.svg`,
+			report.carDiagramImage
+		);
+	}
+
 	// 2. Upload damage photos for all parts
 	if (report.partStates) {
 		for (const partKey in report.partStates) {
@@ -58,8 +66,8 @@ export async function syncInspectionToCloud(inspection) {
 	report.synced = true;
 	await setDoc(docRef, report);
 
-	// 4. Update the local IndexedDB database with the synced status and new public URLs
-	await saveInspection(report);
+	// 4. Remove it from IndexedDB after successful synchronization
+	await deleteInspection(report.id);
 
 	return report;
 }
