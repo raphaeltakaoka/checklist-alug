@@ -1,4 +1,6 @@
 <script>
+	import { compressImage } from "$lib/utils/imageCompressor.js";
+
 	// Svelte 5 property bindings
 	let {
 		partId = $bindable(),
@@ -43,23 +45,35 @@
 		close();
 	}
 
-	// Handle standard file upload
-	function handleFileUpload(e) {
+	// Handle standard file upload with client-side image compression
+	async function handleFileUpload(e) {
 		const files = e.target.files;
 		if (!files) return;
 
 		for (let i = 0; i < files.length; i++) {
 			const file = files[i];
-			const reader = new FileReader();
-			reader.onload = (event) => {
-				photos = [...photos, event.target.result];
-			};
-			reader.readAsDataURL(file);
+			try {
+				const compressedBase64 = await compressImage(file, {
+					maxWidth: 1280,
+					maxHeight: 1280,
+					quality: 0.82,
+				});
+				photos = [...photos, compressedBase64];
+			} catch (err) {
+				console.error("Falha ao comprimir imagem, utilizando fallback original:", err);
+				const reader = new FileReader();
+				reader.onload = (event) => {
+					photos = [...photos, event.target.result];
+				};
+				reader.readAsDataURL(file);
+			}
 		}
 	}
 
-
-
+	// Delete a photo from the local state list
+	function deletePhoto(index) {
+		photos = photos.filter((_, i) => i !== index);
+	}
 </script>
 
 {#if partId}

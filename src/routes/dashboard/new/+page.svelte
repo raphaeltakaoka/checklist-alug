@@ -7,6 +7,7 @@
   import DamageModal from "$lib/components/DamageModal.svelte";
   import { saveInspection, getInspection } from "$lib/db.js";
   import Navbar from "$lib/components/Navbar.svelte";
+  import { compressImage } from "$lib/utils/imageCompressor.js";
 
   // Custom alert / toast states
   let alertMessage = $state("");
@@ -107,8 +108,14 @@
   };
 
   onMount(async () => {
-    // Set default datetime
-    inspectionDateTime = new Date().toISOString().slice(0, 16);
+    // Set default datetime (local timezone)
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, "0");
+    const day = String(now.getDate()).padStart(2, "0");
+    const hours = String(now.getHours()).padStart(2, "0");
+    const minutes = String(now.getMinutes()).padStart(2, "0");
+    inspectionDateTime = `${year}-${month}-${day}T${hours}:${minutes}`;
 
     // Pre-populate inspector name from authenticated session
     inspectorName = localStorage.getItem("inspectorName") || "";
@@ -146,15 +153,25 @@
     document.documentElement.classList.remove("dark");
   });
 
-  function handleLicensePhotoUpload(e) {
+  async function handleLicensePhotoUpload(e) {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      clientLicensePhoto = event.target.result;
-    };
-    reader.readAsDataURL(file);
+    try {
+      const compressedBase64 = await compressImage(file, {
+        maxWidth: 1600,
+        maxHeight: 1600,
+        quality: 0.85,
+      });
+      clientLicensePhoto = compressedBase64;
+    } catch (err) {
+      console.error("Falha ao comprimir CNH, utilizando fallback original:", err);
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        clientLicensePhoto = event.target.result;
+      };
+      reader.readAsDataURL(file);
+    }
   }
 
   function captureCarDiagram() {
@@ -222,7 +239,6 @@
       triggerAlert("A placa do veículo deve ter exatamente 7 caracteres.");
       return false;
     }
-
 
     if (currentStep === 3) {
       captureCarDiagram();
@@ -322,6 +338,10 @@
       return;
     }
 
+    if (!clientLicensePhoto) {
+      triggerAlert("A foto da CNH é obrigatória.");
+      return;
+    }
 
     if (!clientSignature) {
       triggerAlert("A assinatura do cliente é obrigatória.");
@@ -416,10 +436,13 @@
       class="fixed top-24 left-1/2 -translate-x-1/2 z-50 w-full max-w-md px-4 print:hidden"
     >
       <div
-        class="bg-white/95 backdrop-blur-md border-l-4 rounded-2xl shadow-xl p-4 flex items-start gap-3 transition-all duration-300 hover:scale-[1.01] {alertType === 'error' ? 'border-red-500 shadow-red-200/20' : 'border-blue-500 shadow-blue-200/20'}"
+        class="bg-white/95 backdrop-blur-md border-l-4 rounded-2xl shadow-xl p-4 flex items-start gap-3 transition-all duration-300 hover:scale-[1.01] {alertType ===
+        'error'
+          ? 'border-red-500 shadow-red-200/20'
+          : 'border-blue-500 shadow-blue-200/20'}"
       >
-        <div class="flex-shrink-0 text-lg">
-          {#if alertType === 'error'}
+        <div class="shrink-0 text-lg">
+          {#if alertType === "error"}
             ⚠️
           {:else}
             ℹ️
@@ -427,7 +450,7 @@
         </div>
         <div class="flex-1">
           <h4 class="text-sm font-bold text-slate-900 leading-tight">
-            {#if alertType === 'error'}
+            {#if alertType === "error"}
               Atenção
             {:else}
               Informação
@@ -440,11 +463,22 @@
         <button
           type="button"
           onclick={closeAlert}
-          class="flex-shrink-0 p-1 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-700 transition-colors cursor-pointer"
+          class="shrink-0 p-1 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-700 transition-colors cursor-pointer"
           aria-label="Fechar"
         >
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12" />
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            class="h-4 w-4"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2.5"
+              d="M6 18L18 6M6 6l12 12"
+            />
           </svg>
         </button>
       </div>
@@ -543,25 +577,53 @@
                 type="text"
                 bind:value={licensePlate}
                 oninput={(e) => {
-                  licensePlate = e.target.value.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 7);
+                  licensePlate = e.target.value
+                    .replace(/[^a-zA-Z0-9]/g, "")
+                    .toUpperCase()
+                    .slice(0, 7);
                 }}
                 placeholder="ex: XYZ1234"
                 maxlength="7"
                 class="w-full bg-slate-50 border border-slate-200 focus:border-primary rounded-xl px-4 py-3 text-slate-900 outline-none uppercase font-bold tracking-wider transition-all placeholder:normal-case placeholder:font-normal placeholder:tracking-normal text-sm"
               />
-              <p class="mt-1.5 text-xs font-semibold {licensePlate.length === 7 ? 'text-emerald-600' : 'text-slate-400'} flex items-center gap-1.5 transition-all">
+              <p
+                class="mt-1.5 text-xs font-semibold {licensePlate.length === 7
+                  ? 'text-emerald-600'
+                  : 'text-slate-400'} flex items-center gap-1.5 transition-all"
+              >
                 {#if licensePlate.length === 7}
-                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    class="h-4 w-4"
+                    viewBox="0 0 20 20"
+                    fill="currentColor"
+                  >
+                    <path
+                      fill-rule="evenodd"
+                      d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                      clip-rule="evenodd"
+                    />
                   </svg>
                   Placa válida (7 caracteres)
                 {:else if licensePlate.length > 0}
-                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-amber-500" viewBox="0 0 20 20" fill="currentColor">
-                    <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    class="h-4 w-4 text-amber-500"
+                    viewBox="0 0 20 20"
+                    fill="currentColor"
+                  >
+                    <path
+                      fill-rule="evenodd"
+                      d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z"
+                      clip-rule="evenodd"
+                    />
                   </svg>
-                  <span>Precisa ter exatamente 7 caracteres (digitado: {licensePlate.length}/7)</span>
+                  <span
+                    >Precisa ter exatamente 7 caracteres (digitado: {licensePlate.length}/7)</span
+                  >
                 {:else}
-                  <span>Digite os 7 caracteres da placa (letras e números)</span>
+                  <span>Digite os 7 caracteres da placa (letras e números)</span
+                  >
                 {/if}
               </p>
             </div>
@@ -1031,7 +1093,7 @@
                     class="block text-sm font-semibold text-slate-700"
                     for="inp-license-upload"
                   >
-                    Foto da CNH (Motorista)
+                    Foto da CNH (Motorista) *
                   </label>
                 </div>
 
