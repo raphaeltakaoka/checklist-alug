@@ -4,6 +4,7 @@ import { onAuthStateChanged } from "firebase/auth";
 class AuthState {
 	user = $state(null);
 	loading = $state(true);
+	roles = $state({});
 
 	constructor() {
 		if (typeof window !== "undefined") {
@@ -25,10 +26,14 @@ class AuthState {
 							idTokenResult = await u.getIdTokenResult(false);
 						}
 						
-						if (!idTokenResult.claims || !idTokenResult.claims.role) {
-							console.warn("User does not have a role claim assigned. Denying access.");
+						const roles = idTokenResult.claims.roles;
+						const hasAnyPermission = roles && Object.values(roles).some(roleArray => Array.isArray(roleArray) && roleArray.length > 0);
+
+						if (!idTokenResult.claims || !hasAnyPermission) {
+							console.warn("User does not have any permissions assigned. Denying access.");
 							await auth.signOut();
 							this.user = null;
+							this.roles = {};
 							localStorage.removeItem("authenticated");
 							localStorage.removeItem("inspectorName");
 							this.loading = false;
@@ -36,6 +41,7 @@ class AuthState {
 						}
 
 						this.user = u;
+						this.roles = roles;
 						// Maintain local storage compatibility for other parts of the application
 						localStorage.setItem("authenticated", "true");
 						// Try to resolve display name or default to the local part of email
@@ -50,6 +56,7 @@ class AuthState {
 					}
 				} else {
 					this.user = null;
+					this.roles = {};
 					localStorage.removeItem("authenticated");
 					localStorage.removeItem("inspectorName");
 				}
@@ -58,6 +65,10 @@ class AuthState {
 		} else {
 			this.loading = false;
 		}
+	}
+
+	hasPermission(roleGroup, permission) {
+		return Array.isArray(this.roles[roleGroup]) && this.roles[roleGroup].includes(permission);
 	}
 }
 

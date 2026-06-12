@@ -4,6 +4,8 @@
 /// <reference types="@sveltejs/kit" />
 
 import { build, files, version } from '$service-worker';
+import { initializeApp } from "firebase/app";
+import { getMessaging, onBackgroundMessage } from "firebase/messaging/sw";
 
 // This gives `self` the correct Service Worker types
 const self = /** @type {ServiceWorkerGlobalScope} */ (/** @type {unknown} */ (globalThis.self));
@@ -130,3 +132,32 @@ self.addEventListener('message', (event) => {
 	}
 });
 
+// === Firebase Cloud Messaging Background Setup ===
+const firebaseConfig = {
+  apiKey: "AIzaSyAGfpduRticKCZN4WzEVgWQKkIXVrsPbQs",
+  authDomain: "cadastro-alug---dev.firebaseapp.com",
+  projectId: "cadastro-alug---dev",
+  storageBucket: "cadastro-alug---dev.firebasestorage.app",
+  messagingSenderId: "591311088063",
+  appId: "1:591311088063:web:5901dedb8e17f556f8590a"
+};
+
+try {
+	const firebaseApp = initializeApp(firebaseConfig);
+	const messaging = getMessaging(firebaseApp);
+	
+	onBackgroundMessage(messaging, (payload) => {
+		console.log('[service-worker.js] Received background message ', payload);
+		
+		const notificationTitle = payload.notification?.title || 'Checklist Alug';
+		const notificationOptions = {
+			body: payload.notification?.body || '',
+			icon: '/pwa_icon_512.png',
+			data: payload.data
+		};
+	
+		self.registration.showNotification(notificationTitle, notificationOptions);
+	});
+} catch (error) {
+	console.error('Failed to initialize Firebase Messaging in Service Worker:', error);
+}

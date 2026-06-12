@@ -38,12 +38,15 @@
       );
       const user = userCredential.user;
 
-      // Verify custom claims role
+      // Verify custom claims roles
       const idTokenResult = await user.getIdTokenResult(true);
-      if (!idTokenResult.claims || !idTokenResult.claims.role) {
+      const roles = idTokenResult.claims?.roles;
+      const hasAnyPermission = roles && Object.values(roles).some(roleArray => Array.isArray(roleArray) && roleArray.length > 0);
+
+      if (!idTokenResult.claims || !hasAnyPermission) {
         await auth.signOut();
         errorMessage =
-          "Acesso negado. Esta conta não possui uma função (role) atribuída no sistema.";
+          "Acesso negado. Esta conta não possui permissões atribuídas no sistema.";
         hasError = true;
         isLoading = false;
         localStorage.removeItem("authenticated");
