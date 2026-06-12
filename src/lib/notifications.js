@@ -1,6 +1,5 @@
 import { getMessaging, getToken, deleteToken, isSupported } from "firebase/messaging";
-import { app, db } from "./firebase";
-import { doc, updateDoc, arrayUnion, arrayRemove } from "firebase/firestore";
+import { app } from "./firebase";
 
 /**
  * Checks if Push Notifications are supported on this device/browser
@@ -68,13 +67,14 @@ export async function enablePushNotifications(userId, vapidKey) {
             if (currentToken) {
                 console.log('FCM Token received:', currentToken);
                 
-                // Save token to Firestore user document
+                // Save token via secure server endpoint
                 if (userId) {
-                    const userRef = doc(db, "users", userId);
-                    await updateDoc(userRef, {
-                        fcmTokens: arrayUnion(currentToken)
+                    await fetch('/api/notifications/token', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ userId, token: currentToken })
                     }).catch(err => {
-                        console.error("Error saving token to user profile:", err);
+                        console.error("Error saving token via API:", err);
                     });
                 }
                 
@@ -120,13 +120,14 @@ export async function disablePushNotifications(userId, vapidKey) {
             await deleteToken(messaging);
             console.log('FCM Token deleted successfully.');
 
-            // Remove token from Firestore user document
+            // Remove token via secure server endpoint
             if (userId) {
-                const userRef = doc(db, "users", userId);
-                await updateDoc(userRef, {
-                    fcmTokens: arrayRemove(currentToken)
+                await fetch('/api/notifications/token', {
+                    method: 'DELETE',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ userId, token: currentToken })
                 }).catch(err => {
-                    console.error("Error removing token from user profile:", err);
+                    console.error("Error removing token via API:", err);
                 });
             }
         }
