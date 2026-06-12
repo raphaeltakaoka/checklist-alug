@@ -149,9 +149,15 @@ try {
 	onBackgroundMessage(messaging, (payload) => {
 		console.log('[service-worker.js] Received background message ', payload);
 		
-		const notificationTitle = payload.notification?.title || 'Checklist Alug';
+		// If the payload contains a "notification" object, the Firebase SDK
+		// automatically displays it. We return here to prevent duplicates.
+		if (payload.notification) {
+			return;
+		}
+
+		const notificationTitle = payload.data?.title || 'Checklist Alug';
 		const notificationOptions = {
-			body: payload.notification?.body || '',
+			body: payload.data?.body || '',
 			icon: '/pwa_icon_512.png',
 			data: payload.data
 		};
