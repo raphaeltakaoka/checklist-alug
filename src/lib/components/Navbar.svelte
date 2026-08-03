@@ -203,6 +203,19 @@
         <span>Checklists</span>
       </button>
 
+      <button
+        onclick={() => {
+          isMenuOpen = false;
+          goto("/dashboard/tarefas");
+        }}
+        class="w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl text-slate-700 hover:text-primary bg-slate-50 hover:bg-slate-100 border border-slate-200/50 hover:border-slate-350 font-bold transition-all text-sm text-left cursor-pointer group active:scale-[0.98]"
+      >
+        <span class="text-base group-hover:scale-110 transition-transform"
+          >📌</span
+        >
+        <span>Tarefas</span>
+      </button>
+
       {#if pushSupported}
         <div
           class="w-full flex items-center justify-between px-4 py-3.5 rounded-2xl text-slate-700 bg-slate-50 border border-slate-200/50 font-bold transition-all text-sm"
