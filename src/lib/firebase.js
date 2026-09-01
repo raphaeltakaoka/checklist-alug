@@ -1,22 +1,32 @@
-import { initializeApp, getApps } from "firebase/app";
-import { getAuth } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
-import { getStorage } from "firebase/storage";
+import { initializeApp, getApps } from 'firebase/app';
+import { getAuth } from 'firebase/auth';
+import {
+	PUBLIC_FIREBASE_API_KEY,
+	PUBLIC_FIREBASE_APP_ID,
+	PUBLIC_FIREBASE_AUTH_DOMAIN,
+	PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+	PUBLIC_FIREBASE_PROJECT_ID,
+	PUBLIC_FIREBASE_STORAGE_BUCKET
+} from '$env/static/public';
 
 const firebaseConfig = {
-  apiKey: "AIzaSyAGfpduRticKCZN4WzEVgWQKkIXVrsPbQs",
-  authDomain: "cadastro-alug---dev.firebaseapp.com",
-  projectId: "cadastro-alug---dev",
-  storageBucket: "cadastro-alug---dev.firebasestorage.app",
-  messagingSenderId: "591311088063",
-  appId: "1:591311088063:web:5901dedb8e17f556f8590a"
+	apiKey: PUBLIC_FIREBASE_API_KEY,
+	authDomain: PUBLIC_FIREBASE_AUTH_DOMAIN,
+	projectId: PUBLIC_FIREBASE_PROJECT_ID,
+	storageBucket: PUBLIC_FIREBASE_STORAGE_BUCKET,
+	messagingSenderId: PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+	appId: PUBLIC_FIREBASE_APP_ID
 };
 
-// Prevent duplicate initialization in hot-reloading dev environments
+const missingConfig = Object.entries(firebaseConfig)
+	.filter(([, value]) => !value)
+	.map(([key]) => key);
+
+if (missingConfig.length > 0) {
+	throw new Error(`Missing public Firebase configuration: ${missingConfig.join(', ')}`);
+}
+
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
 const auth = getAuth(app);
-const db = getFirestore(app);
-const storage = getStorage(app);
 
-export { app, auth, db, storage };
-
+export { app, auth, firebaseConfig };

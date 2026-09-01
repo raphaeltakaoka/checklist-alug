@@ -1,13 +1,28 @@
 <script>
-  import { onMount } from "svelte";
+  import { onDestroy, onMount } from "svelte";
   import { fade, fly } from "svelte/transition";
   import { goto } from "$app/navigation";
   import CarDiagram from "$lib/components/CarDiagram.svelte";
   import SignaturePad from "$lib/components/SignaturePad.svelte";
   import DamageModal from "$lib/components/DamageModal.svelte";
-  import { saveInspection, getInspection } from "$lib/db.js";
+  import {
+    getInspection,
+    getStorageEstimate,
+    requestPersistentStorage,
+    saveInspection,
+  } from "$lib/db.js";
   import Navbar from "$lib/components/Navbar.svelte";
   import { compressImage } from "$lib/utils/imageCompressor.js";
+  import { authState } from '$lib/auth.svelte.js';
+  import { mediaPreviewUrl, revokeMediaPreview } from '$lib/mediaPreview.js';
+  import {
+    PART_NAMES as partNames,
+    STATUS_BADGE_STYLES as statusBadgeStyles,
+    STATUS_LABELS as statusLabels,
+    countDamages,
+    formatInspectionDateTime as formatDateTime,
+    formatMileage,
+  } from '$lib/inspection.js';
 
   // Custom alert / toast states
   let alertMessage = $state("");
@@ -48,6 +63,10 @@
   let clientLicensePhoto = $state(null);
   let clientSignature = $state(null);
   let carDiagramImage = $state(null);
+  let carDiagramComponent = $state(null);
+  let isHydrating = true;
+  let autosaveTimer;
+  let lifecycleCleanup = () => {};
 
   // Interior & Cabin states
   let mileage = $state("");
@@ -62,51 +81,6 @@
   // Active part selected in diagram (triggers modal if not null)
   let activePartId = $state(null);
 
-  // Get friendly name for a part ID
-  const partNames = {
-    front_bumper: "Parachoque Dianteiro",
-    hood: "Capô",
-    windshield: "Parabrisa",
-    roof: "Teto",
-    rear_glass: "Vidro Traseiro",
-    trunk: "Porta-Malas / Traseira",
-    rear_bumper: "Parachoque Traseiro",
-    left_fender: "Paralama Diant. Esq.",
-    left_front_door: "Porta Diant. Esq.",
-    left_front_window: "Vidro Diant. Esq.",
-    left_rear_door: "Porta Tras. Esq.",
-    left_rear_window: "Vidro Tras. Esq.",
-    left_rear_quarter: "Lateral Tras. Esq.",
-    right_fender: "Paralama Diant. Dir.",
-    right_front_door: "Porta Diant. Dir.",
-    right_front_window: "Vidro Diant. Dir.",
-    right_rear_door: "Porta Tras. Dir.",
-    right_rear_window: "Vidro Tras. Dir.",
-    right_rear_quarter: "Lateral Tras. Dir.",
-    interior: "Interior da Cabine",
-    left_front_wheel: "Roda Diant. Esq.",
-    right_front_wheel: "Roda Diant. Dir.",
-    left_rear_wheel: "Roda Tras. Esq.",
-    right_rear_wheel: "Roda Tras. Dir.",
-  };
-
-  const statusLabels = {
-    none: "Sem Danos",
-    scratch: "Risco",
-    dent: "Amassado",
-    crack: "Trincado",
-    broken: "Quebrado",
-    damaged: "Danificado",
-  };
-
-  const statusBadgeStyles = {
-    scratch: "text-amber-600  border-amber-400/50  bg-amber-50 ",
-    dent: "text-orange-600  border-orange-400/50  bg-orange-50 ",
-    crack: "text-purple-600  border-purple-400/50  bg-purple-50 ",
-    broken: "text-red-600  border-red-400/50  bg-red-50 ",
-    damaged: "text-indigo-600  border-indigo-400/50  bg-indigo-50 ",
-  };
-
   onMount(async () => {
     // Set default datetime (local timezone)
     const now = new Date();
@@ -117,15 +91,26 @@
     const minutes = String(now.getMinutes()).padStart(2, "0");
     inspectionDateTime = `${year}-${month}-${day}T${hours}:${minutes}`;
 
-    // Pre-populate inspector name from authenticated session
-    inspectorName = localStorage.getItem("inspectorName") || "";
+    const ownerUid = authState.user?.uid;
+    if (!ownerUid) {
+      goto('/');
+      return;
+    }
+    inspectorName = authState.displayName;
+
+    requestPersistentStorage().catch(() => false);
+    getStorageEstimate().then((estimate) => {
+      if (estimate?.ratio > 0.85) {
+        triggerAlert('O armazenamento offline está quase cheio. Sincronize ou libere espaço.', 'info');
+      }
+    }).catch(() => null);
 
     // Check if we are resuming an existing draft
     const urlParams = new URLSearchParams(window.location.search);
     const draftId = urlParams.get("id");
     if (draftId) {
       try {
-        const draft = await getInspection(draftId);
+        const draft = await getInspection(ownerUid, draftId);
         if (draft) {
           id = draft.id;
           licensePlate = draft.licensePlate || "";
@@ -149,84 +134,83 @@
       }
     }
 
-    // Force light theme
+    isHydrating = false;
+
+    const flushDraft = () => {
+      if (document.visibilityState === 'hidden') saveCurrentDraftState({ silent: true });
+    };
+    const flushOnPageHide = () => saveCurrentDraftState({ silent: true });
+    document.addEventListener('visibilitychange', flushDraft);
+    window.addEventListener('pagehide', flushOnPageHide);
+
     document.documentElement.classList.remove("dark");
+		lifecycleCleanup = () => {
+      clearTimeout(autosaveTimer);
+      document.removeEventListener('visibilitychange', flushDraft);
+      window.removeEventListener('pagehide', flushOnPageHide);
+      revokeMediaPreview(clientLicensePhoto);
+      revokeMediaPreview(carDiagramImage);
+    };
   });
+
+	onDestroy(() => lifecycleCleanup());
 
   async function handleLicensePhotoUpload(e) {
     const file = e.target.files?.[0];
     if (!file) return;
 
     try {
-      const compressedBase64 = await compressImage(file, {
+		const compressedBlob = await compressImage(file, {
         maxWidth: 1600,
         maxHeight: 1600,
         quality: 0.85,
       });
-      clientLicensePhoto = compressedBase64;
+		revokeMediaPreview(clientLicensePhoto);
+		clientLicensePhoto = compressedBlob;
     } catch (err) {
-      console.error("Falha ao comprimir CNH, utilizando fallback original:", err);
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        clientLicensePhoto = event.target.result;
-      };
-      reader.readAsDataURL(file);
+		console.error('Falha ao comprimir CNH:', err);
+		triggerAlert(err?.message || 'Não foi possível preparar a foto da CNH.');
     }
+		e.target.value = '';
   }
 
   function captureCarDiagram() {
-    if (typeof document === "undefined") return;
-    const originalSvg = document.querySelector(".relative svg");
-    if (!originalSvg) return;
+	try {
+	  const image = carDiagramComponent?.capture?.();
+	  if (image) {
+		revokeMediaPreview(carDiagramImage);
+		carDiagramImage = image;
+	  }
+	} catch (error) {
+	  console.error('Failed to capture car diagram SVG:', error);
+	}
+  }
 
-    try {
-      // Clone the SVG element to keep it pure
-      const clonedSvg = originalSvg.cloneNode(true);
-
-      // Find all styleable elements in original and cloned SVGs
-      const originalElements = originalSvg.querySelectorAll(
-        "path, rect, text, circle",
-      );
-      const clonedElements = clonedSvg.querySelectorAll(
-        "path, rect, text, circle",
-      );
-
-      for (let i = 0; i < originalElements.length; i++) {
-        const orig = originalElements[i];
-        const clone = clonedElements[i];
-        const style = window.getComputedStyle(orig);
-
-        // Apply computed colors and visual properties as inline SVG attributes
-        clone.setAttribute("fill", style.fill);
-        clone.setAttribute("stroke", style.stroke);
-        clone.setAttribute("stroke-width", style.strokeWidth || "1px");
-        clone.setAttribute("opacity", style.opacity || "1");
-
-        // Remove dynamic interactive classes and handlers to keep the saved image static and clean
-        clone.removeAttribute("class");
-        clone.removeAttribute("role");
-        clone.removeAttribute("tabindex");
-        clone.removeAttribute("onclick");
-        clone.removeAttribute("onkeydown");
-      }
-
-      // Capture visual aspect classes/styles of the main SVG container itself
-      clonedSvg.setAttribute(
-        "style",
-        "background-color: transparent; max-width: 100%; height: auto;",
-      );
-      clonedSvg.removeAttribute("class");
-
-      // Serialize to XML string
-      const serializer = new XMLSerializer();
-      const svgString = serializer.serializeToString(clonedSvg);
-
-      // Convert to data URI
-      carDiagramImage =
-        "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svgString);
-    } catch (e) {
-      console.error("Failed to capture car diagram SVG:", e);
-    }
+  function createLocalReport(status = 'draft') {
+    return {
+      id,
+      ownerUid: authState.user?.uid,
+      licensePlate: licensePlate.toUpperCase(),
+      inspectionType,
+      inspectorName,
+      clientName,
+      inspectionDateTime,
+      clientLicensePhoto,
+      clientSignature,
+      mileage,
+      fuelLevel,
+      hasDocument,
+      hasChildSeat,
+      hasEToll,
+      partStates: { ...partStates },
+      carDiagramImage,
+      createdAt: createdAtDate || new Date().toISOString(),
+      status,
+      syncState: status === 'completed' ? 'queued' : 'draft',
+      synced: false,
+      retryCount: 0,
+      lastSyncError: '',
+    };
   }
 
   async function saveDraft() {
@@ -244,25 +228,7 @@
       captureCarDiagram();
     }
 
-    const newReport = {
-      id,
-      licensePlate: licensePlate.toUpperCase(),
-      inspectionType,
-      inspectorName,
-      clientName,
-      inspectionDateTime,
-      clientLicensePhoto,
-      clientSignature,
-      mileage,
-      fuelLevel,
-      hasDocument,
-      hasChildSeat,
-      hasEToll,
-      partStates: { ...partStates },
-      carDiagramImage,
-      createdAt: createdAtDate || new Date().toISOString(),
-      status: "draft",
-    };
+    const newReport = createLocalReport('draft');
 
     try {
       await saveInspection($state.snapshot(newReport));
@@ -277,33 +243,11 @@
     }
   }
 
-  async function saveCurrentDraftState() {
-    // Only save if general info is filled
-    if (!licensePlate || !clientName) return;
+  async function saveCurrentDraftState({ silent = false, captureDiagram = false } = {}) {
+    if (licensePlate.length !== 7 || !clientName || !authState.user?.uid) return false;
+    if (captureDiagram) captureCarDiagram();
 
-    if (currentStep === 3) {
-      captureCarDiagram();
-    }
-
-    const newReport = {
-      id,
-      licensePlate: licensePlate.toUpperCase(),
-      inspectionType,
-      inspectorName,
-      clientName,
-      inspectionDateTime,
-      clientLicensePhoto,
-      clientSignature,
-      mileage,
-      fuelLevel,
-      hasDocument,
-      hasChildSeat,
-      hasEToll,
-      partStates: { ...partStates },
-      carDiagramImage,
-      createdAt: createdAtDate || new Date().toISOString(),
-      status: "draft",
-    };
+    const newReport = createLocalReport('draft');
 
     try {
       await saveInspection($state.snapshot(newReport));
@@ -312,7 +256,10 @@
       }
     } catch (e) {
       console.error("Failed to save draft state to IndexedDB", e);
+		if (!silent) triggerAlert(e?.message || 'Falha ao salvar o rascunho.');
+		return false;
     }
+		return true;
   }
 
   async function goToStep(step) {
@@ -320,7 +267,8 @@
       const saved = await saveDraft();
       if (!saved) return;
     } else {
-      await saveCurrentDraftState();
+		captureCarDiagram();
+		await saveCurrentDraftState();
     }
     closeAlert();
     currentStep = step;
@@ -348,27 +296,8 @@
       return;
     }
 
-    // Create document
-    const newReport = {
-      id,
-      licensePlate: licensePlate.toUpperCase(),
-      inspectionType,
-      inspectorName,
-      clientName,
-      inspectionDateTime,
-      clientLicensePhoto,
-      clientSignature,
-      mileage,
-      fuelLevel,
-      hasDocument,
-      hasChildSeat,
-      hasEToll,
-      partStates: { ...partStates },
-      carDiagramImage,
-      createdAt: createdAtDate || new Date().toISOString(),
-      status: "completed",
-      synced: false,
-    };
+		captureCarDiagram();
+		const newReport = createLocalReport('completed');
 
     try {
       await saveInspection($state.snapshot(newReport));
@@ -379,40 +308,24 @@
     }
   }
 
-  // Count damage issues in an inspection
-  function countDamages(states) {
-    let count = 0;
-    for (const key in states) {
-      if (states[key]?.status && states[key].status !== "none") {
-        count++;
-      }
-    }
-    return count;
-  }
+  $effect(() => {
+    licensePlate;
+    clientName;
+    inspectionType;
+    inspectionDateTime;
+    mileage;
+    fuelLevel;
+    hasDocument;
+    hasChildSeat;
+    hasEToll;
+    partStates;
+    clientLicensePhoto;
+    clientSignature;
+    if (isHydrating || licensePlate.length !== 7 || !clientName || !authState.user?.uid) return;
+    clearTimeout(autosaveTimer);
+    autosaveTimer = setTimeout(() => saveCurrentDraftState({ silent: true }), 800);
+  });
 
-  // Format date and time to dd/mm/yyyy HH:MM
-  function formatDateTime(dateTimeStr) {
-    if (!dateTimeStr) return "N/A";
-    try {
-      const d = new Date(dateTimeStr);
-      if (isNaN(d.getTime())) return "N/A";
-      const day = String(d.getDate()).padStart(2, "0");
-      const month = String(d.getMonth() + 1).padStart(2, "0");
-      const year = d.getFullYear();
-      const hours = String(d.getHours()).padStart(2, "0");
-      const minutes = String(d.getMinutes()).padStart(2, "0");
-      return `${day}/${month}/${year} ${hours}:${minutes}`;
-    } catch (e) {
-      return "N/A";
-    }
-  }
-
-  function formatMileage(value) {
-    if (typeof value !== "string") value = String(value || "");
-    const clean = value.replace(/\D/g, "");
-    if (!clean) return "";
-    return clean.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
-  }
 </script>
 
 <svelte:head>
@@ -517,7 +430,7 @@
               class="flex-1 sm:flex-initial px-2 py-1.5 sm:px-3 rounded-lg text-[10px] sm:text-xs font-bold transition-all cursor-pointer text-center {currentStep ===
               item.step
                 ? 'bg-primary text-white shadow-sm'
-                : 'text-slate-500 hover:text-slate-800 :text-slate-300'}"
+                : 'text-slate-500 hover:text-slate-800 '}"
             >
               <span class="inline sm:hidden">{item.step}. {item.short}</span>
               <span class="hidden sm:inline">{item.step}. {item.label}</span>
@@ -548,7 +461,7 @@
                   class="py-3 rounded-xl text-sm font-extrabold transition-all cursor-pointer border text-center flex items-center justify-center gap-2 {inspectionType ===
                   'Entrega'
                     ? 'bg-primary text-white border-transparent shadow-md scale-[1.02]'
-                    : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100 :bg-slate-800'}"
+                    : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100 '}"
                 >
                   🔑 Entrega
                 </button>
@@ -558,7 +471,7 @@
                   class="py-3 rounded-xl text-sm font-extrabold transition-all cursor-pointer border text-center flex items-center justify-center gap-2 {inspectionType ===
                   'Retirada'
                     ? 'bg-primary text-white border-transparent shadow-md scale-[1.02]'
-                    : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100 :bg-slate-800'}"
+                    : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100 '}"
                 >
                   🚗 Retirada
                 </button>
@@ -766,7 +679,7 @@
                       class="py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer border text-center {fuelLevel ===
                       level
                         ? 'bg-primary text-white border-transparent shadow-sm'
-                        : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100 :bg-slate-800'}"
+                        : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100 '}"
                     >
                       <span class="inline sm:hidden">
                         {level === "0/8"
@@ -804,7 +717,7 @@
                   onclick={() => (hasDocument = !hasDocument)}
                   class="text-left w-full cursor-pointer border rounded-2xl p-4 flex items-center justify-between transition-all select-none {hasDocument
                     ? 'border-primary bg-primary/5 shadow-sm shadow-primary/5'
-                    : 'border-slate-200 bg-white hover:bg-slate-50 :bg-slate-800/40'}"
+                    : 'border-slate-200 bg-white hover:bg-slate-50 '}"
                 >
                   <div class="flex items-center gap-3">
                     <span class="text-xl">📄</span>
@@ -837,7 +750,7 @@
                   onclick={() => (hasEToll = !hasEToll)}
                   class="text-left w-full cursor-pointer border rounded-2xl p-4 flex items-center justify-between transition-all select-none {hasEToll
                     ? 'border-primary bg-primary/5 shadow-sm shadow-primary/5'
-                    : 'border-slate-200 bg-white hover:bg-slate-50 :bg-slate-800/40'}"
+                    : 'border-slate-200 bg-white hover:bg-slate-50 '}"
                 >
                   <div class="flex items-center gap-3">
                     <span class="text-xl">🏷️</span>
@@ -870,7 +783,7 @@
                   onclick={() => (hasChildSeat = !hasChildSeat)}
                   class="text-left w-full cursor-pointer border rounded-2xl p-4 flex items-center justify-between transition-all select-none {hasChildSeat
                     ? 'border-primary bg-primary/5 shadow-sm shadow-primary/5'
-                    : 'border-slate-200 bg-white hover:bg-slate-50 :bg-slate-800/40'}"
+                    : 'border-slate-200 bg-white hover:bg-slate-50 '}"
                 >
                   <div class="flex items-center gap-3">
                     <span class="text-xl">👶</span>
@@ -908,7 +821,7 @@
                 await saveCurrentDraftState();
                 currentStep = 1;
               }}
-              class="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 :bg-slate-850 text-slate-700 font-bold rounded-xl transition-all cursor-pointer text-sm border border-slate-200"
+              class="px-5 py-2.5 bg-slate-100 hover:bg-slate-200  text-slate-700 font-bold rounded-xl transition-all cursor-pointer text-sm border border-slate-200"
             >
               Detalhes
             </button>
@@ -940,7 +853,7 @@
           </div>
 
           <!-- Insert the visual interactive diagram -->
-          <CarDiagram bind:activePart={activePartId} {partStates} />
+			<CarDiagram bind:this={carDiagramComponent} bind:activePart={activePartId} {partStates} />
 
           <div
             class="flex justify-between items-center pt-4 border-t border-slate-100"
@@ -950,7 +863,7 @@
                 await saveCurrentDraftState();
                 currentStep = 2;
               }}
-              class="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 :bg-slate-850 text-slate-700 font-bold rounded-xl transition-all cursor-pointer text-sm border border-slate-200"
+              class="px-5 py-2.5 bg-slate-100 hover:bg-slate-200  text-slate-700 font-bold rounded-xl transition-all cursor-pointer text-sm border border-slate-200"
             >
               Interior
             </button>
@@ -1102,13 +1015,17 @@
                 >
                   {#if clientLicensePhoto}
                     <img
-                      src={clientLicensePhoto}
+						src={mediaPreviewUrl(clientLicensePhoto)}
                       alt="CNH do Cliente"
+                      loading="lazy"
                       class="w-full h-32 object-contain rounded-xl"
                     />
 
                     <button
-                      onclick={() => (clientLicensePhoto = null)}
+						onclick={() => {
+							revokeMediaPreview(clientLicensePhoto);
+							clientLicensePhoto = null;
+						}}
                       class="absolute top-2 right-2 bg-red-600/90 hover:bg-red-600 text-white px-2 py-1 text-xs rounded-lg transition-all"
                     >
                       Excluir Foto
@@ -1176,7 +1093,7 @@
                 await saveCurrentDraftState();
                 currentStep = 3;
               }}
-              class="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 :bg-slate-700 text-slate-700 font-bold rounded-xl transition-all cursor-pointer text-sm border border-slate-200"
+              class="px-5 py-2.5 bg-slate-100 hover:bg-slate-200  text-slate-700 font-bold rounded-xl transition-all cursor-pointer text-sm border border-slate-200"
             >
               Danos
             </button>

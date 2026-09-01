@@ -1,18 +1,27 @@
-import { getMessaging, getToken, deleteToken, isSupported } from "firebase/messaging";
-import { app } from "./firebase";
+import { app } from '$lib/firebase.js';
+import { authenticatedFetch } from '$lib/api.js';
+
+async function getMessagingModule() {
+	return import('firebase/messaging');
+}
 
 /**
  * Checks if Push Notifications are supported on this device/browser
  */
 export async function isPushSupported() {
-    if (!('serviceWorker' in navigator) || !('Notification' in window)) {
-        return false;
-    }
-    try {
-        return await isSupported();
-    } catch (e) {
-        return false;
-    }
+	if (
+		typeof window === 'undefined' ||
+		!('serviceWorker' in navigator) ||
+		!('Notification' in window)
+	) {
+		return false;
+	}
+	try {
+		const { isSupported } = await getMessagingModule();
+		return await isSupported();
+	} catch {
+		return false;
+	}
 }
 
 /**
@@ -33,7 +42,7 @@ export function isInstalledPWA() {
  * @param {string} vapidKey - The Firebase Web Push certificate key.
  * @returns {Promise<string | null>} The FCM token if successful, null otherwise.
  */
-export async function enablePushNotifications(userId, vapidKey) {
+export async function enablePushNotifications(vapidKey) {
     try {
         const supported = await isPushSupported();
         if (!supported) {
@@ -52,9 +61,8 @@ export async function enablePushNotifications(userId, vapidKey) {
 
         const permission = await Notification.requestPermission();
         if (permission === 'granted') {
-            console.log('Notification permission granted.');
-            
-            const messaging = getMessaging(app);
+			const { getMessaging, getToken } = await getMessagingModule();
+			const messaging = getMessaging(app);
             
             // Wait for service worker to be ready
             const registration = await navigator.serviceWorker.ready;
@@ -64,28 +72,17 @@ export async function enablePushNotifications(userId, vapidKey) {
                 serviceWorkerRegistration: registration 
             });
 
-            if (currentToken) {
-                console.log('FCM Token received:', currentToken);
-                
-                // Save token via secure server endpoint
-                if (userId) {
-                    await fetch('/api/notifications/token', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ userId, token: currentToken })
-                    }).catch(err => {
-                        console.error("Error saving token via API:", err);
-                    });
-                }
-                
-                return currentToken;
-            } else {
-                console.log('No registration token available. Request permission to generate one.');
-                return null;
-            }
-        } else {
-            console.log('Unable to get permission to notify.');
-            return null;
+			if (currentToken) {
+				await authenticatedFetch('/api/notifications/token', {
+					method: 'POST',
+					body: JSON.stringify({ token: currentToken })
+				});
+				return currentToken;
+			} else {
+				return null;
+			}
+		} else {
+			return null;
         }
     } catch (error) {
         console.error("Error during notification permission request:", error);
@@ -101,36 +98,28 @@ export async function enablePushNotifications(userId, vapidKey) {
  * @param {string} vapidKey - The Firebase Web Push certificate key.
  * @returns {Promise<boolean>} True if successful, false otherwise.
  */
-export async function disablePushNotifications(userId, vapidKey) {
+export async function disablePushNotifications(vapidKey) {
     try {
         const supported = await isPushSupported();
         if (!supported) {
             return false;
         }
 
-        const messaging = getMessaging(app);
+		const { deleteToken, getMessaging, getToken } = await getMessagingModule();
+		const messaging = getMessaging(app);
         const registration = await navigator.serviceWorker.ready;
         const currentToken = await getToken(messaging, {
             vapidKey,
             serviceWorkerRegistration: registration
         });
 
-        if (currentToken) {
-            // Delete the token from FCM servers
-            await deleteToken(messaging);
-            console.log('FCM Token deleted successfully.');
-
-            // Remove token via secure server endpoint
-            if (userId) {
-                await fetch('/api/notifications/token', {
-                    method: 'DELETE',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ userId, token: currentToken })
-                }).catch(err => {
-                    console.error("Error removing token via API:", err);
-                });
-            }
-        }
+		if (currentToken) {
+			await authenticatedFetch('/api/notifications/token', {
+				method: 'DELETE',
+				body: JSON.stringify({ token: currentToken })
+			});
+			await deleteToken(messaging);
+		}
         return true;
     } catch (error) {
         console.error("Error during disabling push notifications:", error);

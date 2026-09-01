@@ -1,128 +1,278 @@
 const DB_NAME = 'inspectionDB';
-const DB_VERSION = 1;
-const STORE_NAME = 'inspections';
+const DB_VERSION = 2;
+const INSPECTION_STORE = 'inspections';
+const MEDIA_STORE = 'inspectionMedia';
+const SYNCED_RETENTION_LIMIT = 50;
+const MEDIA_PREFIX = 'idb-media:';
 
-/**
- * Initializes and opens the IndexedDB database.
- * @returns {Promise<IDBDatabase>}
- */
+let connectionPromise;
+
+function requireOwner(ownerUid) {
+	if (typeof ownerUid !== 'string' || ownerUid.length === 0) {
+		throw new Error('An authenticated owner UID is required for local inspection data.');
+	}
+}
+
+function requestResult(request) {
+	return new Promise((resolve, reject) => {
+		request.onsuccess = () => resolve(request.result);
+		request.onerror = () => reject(request.error);
+	});
+}
+
+function transactionComplete(transaction) {
+	return new Promise((resolve, reject) => {
+		transaction.oncomplete = () => resolve();
+		transaction.onerror = () => reject(transaction.error);
+		transaction.onabort = () => reject(transaction.error || new Error('IndexedDB transaction aborted.'));
+	});
+}
+
+function normalizeStorageError(error) {
+	if (error?.name === 'QuotaExceededError') {
+		return new Error('O armazenamento offline do dispositivo está cheio. Libere espaço e tente novamente.');
+	}
+	return error;
+}
+
 export function openDB() {
-	return new Promise((resolve, reject) => {
-		if (typeof window === 'undefined') {
-			reject(new Error('IndexedDB is only available in the browser environment.'));
-			return;
-		}
+	if (connectionPromise) return connectionPromise;
+	if (typeof indexedDB === 'undefined') {
+		return Promise.reject(new Error('IndexedDB is not available in this environment.'));
+	}
 
+	connectionPromise = new Promise((resolve, reject) => {
 		const request = indexedDB.open(DB_NAME, DB_VERSION);
-
-		request.onerror = (event) => {
-			console.error('Failed to open database:', event.target.error);
-			reject(event.target.error);
+		request.onerror = () => {
+			connectionPromise = undefined;
+			reject(request.error);
 		};
-
-		request.onsuccess = (event) => {
-			resolve(event.target.result);
+		request.onblocked = () => {
+			connectionPromise = undefined;
+			reject(new Error('Close other Checklist Alug tabs to upgrade offline storage.'));
 		};
-
-		request.onupgradeneeded = (event) => {
-			const db = event.target.result;
-			if (!db.objectStoreNames.contains(STORE_NAME)) {
-				db.createObjectStore(STORE_NAME, { keyPath: 'id' });
+		request.onupgradeneeded = () => {
+			const database = request.result;
+			// Version 1 records did not contain an owner and cannot be separated safely.
+			if (database.objectStoreNames.contains(INSPECTION_STORE)) {
+				database.deleteObjectStore(INSPECTION_STORE);
 			}
-		};
-	});
-}
-
-/**
- * Retrieves all inspection records from IndexedDB.
- * @returns {Promise<Array>}
- */
-export async function getAllInspections() {
-	const db = await openDB();
-	return new Promise((resolve, reject) => {
-		const transaction = db.transaction(STORE_NAME, 'readonly');
-		const store = transaction.objectStore(STORE_NAME);
-		const request = store.getAll();
-
-		request.onsuccess = () => {
-			// Sort inspections by creation date descending, fallback to id
-			const list = request.result || [];
-			list.sort((a, b) => {
-				const dateA = new Date(a.createdAt || 0);
-				const dateB = new Date(b.createdAt || 0);
-				return dateB - dateA;
+			const inspections = database.createObjectStore(INSPECTION_STORE, {
+				keyPath: ['ownerUid', 'id']
 			});
-			resolve(list);
-		};
+			inspections.createIndex('ownerUid', 'ownerUid');
+			inspections.createIndex('ownerStatus', ['ownerUid', 'status']);
+			inspections.createIndex('ownerUpdatedAt', ['ownerUid', 'updatedAt']);
 
-		request.onerror = () => {
-			reject(request.error);
+			if (database.objectStoreNames.contains(MEDIA_STORE)) {
+				database.deleteObjectStore(MEDIA_STORE);
+			}
+			const media = database.createObjectStore(MEDIA_STORE, {
+				keyPath: ['ownerUid', 'inspectionId', 'key']
+			});
+			media.createIndex('ownerInspection', ['ownerUid', 'inspectionId']);
+		};
+		request.onsuccess = () => {
+			const database = request.result;
+			database.onversionchange = () => {
+				database.close();
+				connectionPromise = undefined;
+			};
+			resolve(database);
 		};
 	});
+
+	return connectionPromise;
 }
 
-/**
- * Saves (adds or updates) an inspection record in IndexedDB.
- * @param {Object} inspection The inspection object to save.
- * @returns {Promise<void>}
- */
+async function dataUrlToBlob(value) {
+	const [header, encoded] = value.split(',', 2);
+	const mimeType = header.match(/^data:([^;,]+)/)?.[1] || 'application/octet-stream';
+	if (!header.includes(';base64')) {
+		return new Blob([new TextEncoder().encode(decodeURIComponent(encoded))], { type: mimeType });
+	}
+	const binary = atob(encoded);
+	const bytes = new Uint8Array(binary.length);
+	for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+	return new Blob([bytes], { type: mimeType });
+}
+
+async function blobToDataUrl(blob) {
+	const bytes = new Uint8Array(await blob.arrayBuffer());
+	let binary = '';
+	for (let index = 0; index < bytes.length; index += 1) binary += String.fromCharCode(bytes[index]);
+	return `data:${blob.type || 'application/octet-stream'};base64,${btoa(binary)}`;
+}
+
+async function extractMedia(report) {
+	const storedReport = structuredClone(report);
+	const media = [];
+	const storeValue = async (key, value) => {
+		if (!(value instanceof Blob) && !(typeof value === 'string' && value.startsWith('data:'))) {
+			return value;
+		}
+		const blob = value instanceof Blob ? value : await dataUrlToBlob(value);
+		media.push({
+			ownerUid: report.ownerUid,
+			inspectionId: report.id,
+			key,
+			blob,
+			contentType: blob.type || 'application/octet-stream',
+			size: blob.size,
+			updatedAt: new Date().toISOString()
+		});
+		return `${MEDIA_PREFIX}${key}`;
+	};
+
+	for (const field of ['clientLicensePhoto', 'clientSignature', 'carDiagramImage']) {
+		storedReport[field] = await storeValue(field, storedReport[field]);
+	}
+	for (const [partKey, state] of Object.entries(storedReport.partStates || {})) {
+		if (!Array.isArray(state?.photos)) continue;
+		state.photos = await Promise.all(
+			state.photos.map((photo, index) => storeValue(`parts/${partKey}/${index}`, photo))
+		);
+	}
+
+	return { storedReport, media };
+}
+
+async function hydrateMedia(database, report) {
+	if (!report) return null;
+	const hydrated = structuredClone(report);
+	const transaction = database.transaction(MEDIA_STORE, 'readonly');
+	const completed = transactionComplete(transaction);
+	const store = transaction.objectStore(MEDIA_STORE);
+	const resolveValue = async (value) => {
+		if (typeof value !== 'string' || !value.startsWith(MEDIA_PREFIX)) return value;
+		const record = await requestResult(
+			store.get([report.ownerUid, report.id, value.slice(MEDIA_PREFIX.length)])
+		);
+		return record?.blob ? blobToDataUrl(record.blob) : null;
+	};
+
+	for (const field of ['clientLicensePhoto', 'clientSignature', 'carDiagramImage']) {
+		hydrated[field] = await resolveValue(hydrated[field]);
+	}
+	for (const state of Object.values(hydrated.partStates || {})) {
+		if (Array.isArray(state?.photos)) {
+			state.photos = await Promise.all(state.photos.map(resolveValue));
+		}
+	}
+	await completed;
+	return hydrated;
+}
+
 export async function saveInspection(inspection) {
-	const db = await openDB();
-	return new Promise((resolve, reject) => {
-		const transaction = db.transaction(STORE_NAME, 'readwrite');
-		const store = transaction.objectStore(STORE_NAME);
-		const request = store.put(inspection);
+	requireOwner(inspection?.ownerUid);
+	if (typeof inspection.id !== 'string' || inspection.id.length === 0) {
+		throw new Error('Inspection ID is required.');
+	}
 
-		request.onsuccess = () => {
-			resolve();
-		};
+	try {
+		const database = await openDB();
+		const { storedReport, media } = await extractMedia({
+			...inspection,
+			updatedAt: new Date().toISOString()
+		});
+		const transaction = database.transaction([INSPECTION_STORE, MEDIA_STORE], 'readwrite');
+		const completed = transactionComplete(transaction);
+		const mediaStore = transaction.objectStore(MEDIA_STORE);
+		const existingKeys = await requestResult(
+			mediaStore.index('ownerInspection').getAllKeys([inspection.ownerUid, inspection.id])
+		);
+		for (const key of existingKeys) mediaStore.delete(key);
+		for (const record of media) mediaStore.put(record);
+		transaction.objectStore(INSPECTION_STORE).put(storedReport);
+		await completed;
+		await pruneSyncedInspections(inspection.ownerUid);
+	} catch (error) {
+		throw normalizeStorageError(error);
+	}
+}
 
-		request.onerror = () => {
-			reject(request.error);
-		};
+export async function getInspection(ownerUid, id, options = {}) {
+	requireOwner(ownerUid);
+	const database = await openDB();
+	const transaction = database.transaction(INSPECTION_STORE, 'readonly');
+	const completed = transactionComplete(transaction);
+	const report = await requestResult(transaction.objectStore(INSPECTION_STORE).get([ownerUid, id]));
+	await completed;
+	if (!report || options.includeMedia === false) return report || null;
+	return hydrateMedia(database, report);
+}
+
+export async function getAllInspections(ownerUid, options = {}) {
+	requireOwner(ownerUid);
+	const database = await openDB();
+	const transaction = database.transaction(INSPECTION_STORE, 'readonly');
+	const completed = transactionComplete(transaction);
+	const records = await requestResult(
+		transaction.objectStore(INSPECTION_STORE).index('ownerUid').getAll(ownerUid)
+	);
+	await completed;
+	records.sort((a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0));
+	if (!options.includeMedia) return records;
+	return Promise.all(records.map((record) => hydrateMedia(database, record)));
+}
+
+export async function deleteInspection(ownerUid, id) {
+	requireOwner(ownerUid);
+	const database = await openDB();
+	const transaction = database.transaction([INSPECTION_STORE, MEDIA_STORE], 'readwrite');
+	const completed = transactionComplete(transaction);
+	transaction.objectStore(INSPECTION_STORE).delete([ownerUid, id]);
+	const mediaStore = transaction.objectStore(MEDIA_STORE);
+	const mediaKeys = await requestResult(mediaStore.index('ownerInspection').getAllKeys([ownerUid, id]));
+	for (const key of mediaKeys) mediaStore.delete(key);
+	await completed;
+}
+
+async function pruneSyncedInspections(ownerUid) {
+	const database = await openDB();
+	const readTransaction = database.transaction(INSPECTION_STORE, 'readonly');
+	const completed = transactionComplete(readTransaction);
+	const synced = await requestResult(
+		readTransaction.objectStore(INSPECTION_STORE).index('ownerStatus').getAll([ownerUid, 'synced'])
+	);
+	await completed;
+	if (synced.length <= SYNCED_RETENTION_LIMIT) return;
+
+	synced.sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0));
+	for (const report of synced.slice(SYNCED_RETENTION_LIMIT)) {
+		await deleteInspection(ownerUid, report.id);
+	}
+}
+
+export async function requestPersistentStorage() {
+	if (!navigator.storage?.persist) return false;
+	return navigator.storage.persist();
+}
+
+export async function getStorageEstimate() {
+	if (!navigator.storage?.estimate) return null;
+	const { usage = 0, quota = 0 } = await navigator.storage.estimate();
+	return { usage, quota, ratio: quota > 0 ? usage / quota : 0 };
+}
+
+async function resetForTests() {
+	if (connectionPromise) {
+		const database = await connectionPromise.catch(() => null);
+		database?.close();
+		connectionPromise = undefined;
+	}
+	await new Promise((resolve, reject) => {
+		const request = indexedDB.deleteDatabase(DB_NAME);
+		request.onsuccess = () => resolve();
+		request.onerror = () => reject(request.error);
+		request.onblocked = () => reject(new Error('IndexedDB test reset was blocked.'));
 	});
 }
 
-/**
- * Deletes an inspection record from IndexedDB.
- * @param {string} id The unique identifier of the inspection.
- * @returns {Promise<void>}
- */
-export async function deleteInspection(id) {
-	const db = await openDB();
-	return new Promise((resolve, reject) => {
-		const transaction = db.transaction(STORE_NAME, 'readwrite');
-		const store = transaction.objectStore(STORE_NAME);
-		const request = store.delete(id);
-
-		request.onsuccess = () => {
-			resolve();
-		};
-
-		request.onerror = () => {
-			reject(request.error);
-		};
-	});
-}
-
-/**
- * Retrieves a single inspection record by its ID.
- * @param {string} id The unique identifier of the inspection.
- * @returns {Promise<Object|null>}
- */
-export async function getInspection(id) {
-	const db = await openDB();
-	return new Promise((resolve, reject) => {
-		const transaction = db.transaction(STORE_NAME, 'readonly');
-		const store = transaction.objectStore(STORE_NAME);
-		const request = store.get(id);
-
-		request.onsuccess = () => {
-			resolve(request.result || null);
-		};
-
-		request.onerror = () => {
-			reject(request.error);
-		};
-	});
-}
+export const __dbTestUtils = {
+	DB_NAME,
+	DB_VERSION,
+	INSPECTION_STORE,
+	MEDIA_STORE,
+	resetForTests
+};

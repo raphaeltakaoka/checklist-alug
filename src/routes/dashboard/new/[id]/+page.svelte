@@ -7,10 +7,16 @@
 		saveInspection,
 		deleteInspection as deleteFromDB,
 	} from "$lib/db.js";
-	import { db } from "$lib/firebase.js";
-	import { doc, setDoc, deleteDoc } from "firebase/firestore";
 	import logo from "$lib/assets/logo_alug_locadora.png";
 	import Navbar from "$lib/components/Navbar.svelte";
+	import { authState } from '$lib/auth.svelte.js';
+	import { authenticatedFetch } from '$lib/api.js';
+	import {
+		PART_NAMES as partNames,
+		STATUS_BADGE_STYLES as statusBadgeStyles,
+		STATUS_LABELS as statusLabels,
+		countDamages,
+	} from '$lib/inspection.js';
 
 	// Retrieve the route param 'id'
 	let id = $derived($page.params.id);
@@ -21,54 +27,12 @@
 	let activePreviewPartKey = $state(null);
 	let activePreviewPhotoIndex = $state(null);
 
-	// Get friendly name for a part ID
-	const partNames = {
-		front_bumper: "Parachoque Dianteiro",
-		hood: "Capô",
-		windshield: "Parabrisa",
-		roof: "Teto",
-		rear_glass: "Vidro Traseiro",
-		trunk: "Porta-Malas / Traseira",
-		rear_bumper: "Parachoque Traseiro",
-		left_fender: "Paralama Diant. Esq.",
-		left_front_door: "Porta Diant. Esq.",
-		left_front_window: "Vidro Diant. Esq.",
-		left_rear_door: "Porta Tras. Esq.",
-		left_rear_window: "Vidro Tras. Esq.",
-		left_rear_quarter: "Lateral Tras. Esq.",
-		right_fender: "Paralama Diant. Dir.",
-		right_front_door: "Porta Diant. Dir.",
-		right_front_window: "Vidro Diant. Dir.",
-		right_rear_door: "Porta Tras. Dir.",
-		right_rear_window: "Vidro Tras. Dir.",
-		right_rear_quarter: "Lateral Tras. Dir.",
-		interior: "Interior da Cabine",
-		left_front_wheel: "Roda Diant. Esq.",
-		right_front_wheel: "Roda Diant. Dir.",
-		left_rear_wheel: "Roda Tras. Esq.",
-		right_rear_wheel: "Roda Tras. Dir.",
-	};
-
-	const statusLabels = {
-		none: "Sem Danos",
-		scratch: "Risco",
-		dent: "Amassado",
-		crack: "Trincado",
-		broken: "Quebrado",
-		damaged: "Danificado",
-	};
-
-	const statusBadgeStyles = {
-		scratch: "text-amber-600  border-amber-500/40 bg-white  print:text-amber-600 print:border-amber-400",
-		dent: "text-orange-600  border-orange-500/40 bg-white  print:text-orange-600 print:border-orange-400",
-		crack: "text-purple-600  border-purple-500/40 bg-white  print:text-purple-600 print:border-purple-400",
-		broken: "text-red-600  border-red-500/40 bg-white  print:text-red-600 print:border-red-400",
-		damaged: "text-indigo-600  border-indigo-500/40 bg-white  print:text-indigo-600 print:border-indigo-400",
-	};
 
 	onMount(async () => {
+		const ownerUid = authState.user?.uid;
+		if (!ownerUid) return;
 		try {
-			selectedInspection = await getInspection(id);
+			selectedInspection = await getInspection(ownerUid, id);
 		} catch (e) {
 			console.error("Failed to load inspection from IndexedDB", e);
 		}
@@ -93,14 +57,17 @@
 	}
 
 	async function deleteInspection() {
-		if (!inspectionIdToDelete) return;
+		const ownerUid = authState.user?.uid;
+		if (!inspectionIdToDelete || !ownerUid) return;
 		isDeleting = true;
 		const wasSynced = selectedInspection?.synced;
 		try {
-			await deleteFromDB(inspectionIdToDelete);
 			if (wasSynced) {
-				await deleteDoc(doc(db, "checklists", inspectionIdToDelete));
+				await authenticatedFetch(`/api/checklists/${encodeURIComponent(inspectionIdToDelete)}`, {
+					method: 'DELETE'
+				});
 			}
+			await deleteFromDB(ownerUid, inspectionIdToDelete);
 			goto("/dashboard");
 		} catch (e) {
 			console.error("Failed to delete inspection:", e);
@@ -117,18 +84,32 @@
 			selectedInspection &&
 			selectedInspection.partStates?.[partKey]?.photos
 		) {
-			// Filter out the photo
+			const previousPartStates = structuredClone($state.snapshot(selectedInspection.partStates));
+			const photoPath = selectedInspection.partStates[partKey].photoPaths?.[photoIndex] || '';
 			selectedInspection.partStates[partKey].photos =
 				selectedInspection.partStates[partKey].photos.filter(
 					(_, idx) => idx !== photoIndex,
 				);
+			if (Array.isArray(selectedInspection.partStates[partKey].photoPaths)) {
+				selectedInspection.partStates[partKey].photoPaths =
+					selectedInspection.partStates[partKey].photoPaths.filter((_, idx) => idx !== photoIndex);
+			}
 
 			try {
 				await saveInspection($state.snapshot(selectedInspection));
-				if (selectedInspection.synced && selectedInspection.status === "completed") {
-					await setDoc(doc(db, "checklists", selectedInspection.id), $state.snapshot(selectedInspection));
+				if (selectedInspection.synced) {
+					if (!photoPath) throw new Error('Stored photo path is missing.');
+					await authenticatedFetch(
+						`/api/checklists/${encodeURIComponent(selectedInspection.id)}/photos`,
+						{
+							method: 'DELETE',
+							body: JSON.stringify({ partKey, photoPath })
+						}
+					);
 				}
 			} catch (e) {
+				selectedInspection.partStates = previousPartStates;
+				await saveInspection($state.snapshot(selectedInspection)).catch(() => null);
 				console.error(
 					"Failed to save updated inspection:",
 					e,
@@ -136,17 +117,6 @@
 				alert("Falha ao excluir a foto.");
 			}
 		}
-	}
-
-	// Count damage issues in an inspection
-	function countDamages(states) {
-		let count = 0;
-		for (const key in states) {
-			if (states[key]?.status && states[key].status !== "none") {
-				count++;
-			}
-		}
-		return count;
 	}
 
 	// Print helper
@@ -178,7 +148,7 @@
 				<div class="flex justify-between items-center print:hidden">
 					<button
 						onclick={() => goto("/dashboard")}
-						class="px-5 py-2.5 bg-white border border-slate-200 hover:bg-slate-50 :bg-slate-850 text-slate-700 font-bold rounded-xl text-sm transition-all cursor-pointer"
+						class="px-5 py-2.5 bg-white border border-slate-200 hover:bg-slate-50  text-slate-700 font-bold rounded-xl text-sm transition-all cursor-pointer"
 					>
 						← Voltar ao Painel
 					</button>
@@ -193,7 +163,7 @@
 						<button
 							onclick={() =>
 								triggerDelete(selectedInspection.id)}
-							class="px-5 py-2.5 bg-red-50 hover:bg-red-600 :bg-red-600 text-red-600 hover:text-white rounded-xl text-sm border border-red-200 hover:border-transparent transition-all cursor-pointer font-bold"
+							class="px-5 py-2.5 bg-red-50 hover:bg-red-600  text-red-600 hover:text-white rounded-xl text-sm border border-red-200 hover:border-transparent transition-all cursor-pointer font-bold"
 						>
 							Excluir
 						</button>
@@ -210,7 +180,7 @@
 					>
 						<div class="flex items-center gap-3">
 							<div
-								class="flex items-center justify-center p-1 bg-white rounded-lg border border-slate-150 shadow-xs"
+								class="flex items-center justify-center p-1 bg-white rounded-lg border border-slate-200 shadow-xs"
 							>
 								<img
 									src={logo}
@@ -383,6 +353,7 @@
 									<img
 										src={selectedInspection.clientLicensePhoto}
 										alt="CNH do Cliente"
+										loading="lazy"
 										class="w-full h-full object-contain"
 									/>
 								</div>
@@ -404,6 +375,7 @@
 								<img
 									src={selectedInspection.carDiagramImage}
 									alt="Mapa de Danos do Veículo"
+									loading="lazy"
 									class="w-full h-auto select-none max-h-[350px] object-contain"
 								/>
 								<span class="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-3">Mapa Visual de Danos Registrados</span>
@@ -479,6 +451,7 @@
 															<img
 																src={photo}
 																alt="{partKey} {idx}"
+																loading="lazy"
 																class="w-full h-full object-cover"
 															/>
 														</button>
@@ -575,6 +548,7 @@
 									<img
 										src={selectedInspection.clientSignature}
 										alt="Assinatura"
+										loading="lazy"
 										class="h-full object-contain"
 									/>
 								{:else}
@@ -638,7 +612,7 @@
 			<div class="flex gap-3">
 				<button
 					onclick={cancelDelete}
-					class="flex-1 py-3 text-center text-xs font-bold text-slate-700 hover:text-slate-900 :text-white bg-slate-100 hover:bg-slate-200 :bg-slate-800/80 rounded-xl transition-all cursor-pointer border border-slate-200"
+					class="flex-1 py-3 text-center text-xs font-bold text-slate-700 hover:text-slate-900  bg-slate-100 hover:bg-slate-200  rounded-xl transition-all cursor-pointer border border-slate-200"
 					disabled={isDeleting}
 				>
 					Cancelar

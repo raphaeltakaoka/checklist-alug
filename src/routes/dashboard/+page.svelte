@@ -5,10 +5,10 @@
 		getAllInspections,
 		deleteInspection as deleteFromDB,
 	} from "$lib/db.js";
-	import { syncInspectionToCloud } from "$lib/sync.js";
-	import { db } from "$lib/firebase.js";
-	import { doc, deleteDoc } from "firebase/firestore";
 	import Navbar from "$lib/components/Navbar.svelte";
+	import { authState } from '$lib/auth.svelte.js';
+	import { authenticatedFetch } from '$lib/api.js';
+	import { countDamages } from '$lib/inspection.js';
 
 	// App state management
 	let inspections = $state([]);
@@ -24,14 +24,16 @@
 	let eventCleanup = () => {};
 
 	onMount(async () => {
+		const ownerUid = authState.user?.uid;
+		if (!ownerUid) return;
 		try {
-			inspections = await getAllInspections();
+			inspections = await getAllInspections(ownerUid);
 		} catch (e) {
 			console.error("Failed to load inspections from IndexedDB", e);
 		}
 
 		// Retrieve inspector name from localStorage
-		inspectorName = localStorage.getItem("inspectorName") || "Inspetor";
+		inspectorName = authState.displayName || "Inspetor";
 
 		// Force light theme
 		document.documentElement.classList.remove("dark");
@@ -65,12 +67,15 @@
 	});
 
 	async function triggerPendingSyncs() {
-		if (isOffline) return;
+		const ownerUid = authState.user?.uid;
+		if (isOffline || !ownerUid) return;
 
 		// Find completed checklists that haven't been synced yet
 		const pending = inspections.filter(
 			(i) => i.status === "completed" && !i.synced,
 		);
+		if (pending.length === 0) return;
+		const { syncInspectionToCloud } = await import('$lib/sync.js');
 
 		for (const ins of pending) {
 			if (activeSyncIds.has(ins.id)) continue;
@@ -82,7 +87,7 @@
 			try {
 				await syncInspectionToCloud(ins);
 				// Refresh local list to pick up updated "synced: true" and lightweight urls
-				inspections = await getAllInspections();
+				inspections = await getAllInspections(ownerUid);
 			} catch (e) {
 				console.error(
 					`Failed to sync inspection ${ins.id} to cloud:`,
@@ -115,7 +120,8 @@
 	}
 
 	async function deleteInspection() {
-		if (!inspectionIdToDelete) return;
+		const ownerUid = authState.user?.uid;
+		if (!inspectionIdToDelete || !ownerUid) return;
 		isDeleting = true;
 
 		// Check if it was synced
@@ -123,16 +129,13 @@
 		const wasSynced = toDelete?.synced;
 
 		try {
-			// Delete locally from IndexedDB
-			await deleteFromDB(inspectionIdToDelete);
-			inspections = inspections.filter(
-				(i) => i.id !== inspectionIdToDelete,
-			);
-
-			// Delete from Cloud Firestore if synced
 			if (wasSynced) {
-				await deleteDoc(doc(db, "checklists", inspectionIdToDelete));
+				await authenticatedFetch(`/api/checklists/${encodeURIComponent(inspectionIdToDelete)}`, {
+					method: 'DELETE'
+				});
 			}
+			await deleteFromDB(ownerUid, inspectionIdToDelete);
+			inspections = inspections.filter((i) => i.id !== inspectionIdToDelete);
 		} catch (e) {
 			console.error("Failed to delete inspection:", e);
 			alert("Falha ao excluir o registro de inspeção.");
@@ -147,23 +150,13 @@
 	const filteredInspections = $derived(
 		inspections.filter(
 			(i) =>
-				i.licensePlate
+				(i.licensePlate || '')
 					.toLowerCase()
 					.includes(searchPlate.toLowerCase()) ||
-				i.clientName.toLowerCase().includes(searchPlate.toLowerCase()),
+				(i.clientName || '').toLowerCase().includes(searchPlate.toLowerCase()),
 		),
 	);
 
-	// Count damage issues in an inspection
-	function countDamages(states) {
-		let count = 0;
-		for (const key in states) {
-			if (states[key]?.status && states[key].status !== "none") {
-				count++;
-			}
-		}
-		return count;
-	}
 </script>
 
 <svelte:head>
@@ -356,7 +349,7 @@
 					>
 						{#each filteredInspections as rep (rep.id)}
 							<div
-								class="bg-white hover:bg-slate-50/50 :bg-slate-900/60 border border-slate-200 hover:border-slate-300 :border-slate-800 shadow-sm hover:shadow-md rounded-2xl p-5 transition-all flex flex-col justify-between group relative overflow-hidden"
+								class="bg-white hover:bg-slate-50/50  border border-slate-200 hover:border-slate-300  shadow-sm hover:shadow-md rounded-2xl p-5 transition-all flex flex-col justify-between group relative overflow-hidden"
 							>
 								<!-- License plate display -->
 								<div class="flex justify-between items-start">
@@ -401,7 +394,7 @@
 													class="px-2 py-0.5 text-[9px] uppercase rounded border bg-slate-500/10 text-slate-600 border-slate-500/20 flex items-center gap-1 animate-pulse font-extrabold"
 												>
 													<svg
-														class="animate-spin h-2 w-2 text-slate-650"
+														class="animate-spin h-2 w-2 text-slate-600"
 														xmlns="http://www.w3.org/2000/svg"
 														fill="none"
 														viewBox="0 0 24 24"
@@ -537,7 +530,7 @@
 											e.stopPropagation();
 											triggerDelete(rep.id);
 										}}
-										class="px-3 py-2 bg-slate-50 hover:bg-red-50 :bg-red-950/20 text-slate-500 hover:text-red-600 :text-red-400 border border-slate-200 rounded-xl transition-all cursor-pointer text-xs"
+										class="px-3 py-2 bg-slate-50 hover:bg-red-50  text-slate-500 hover:text-red-600  border border-slate-200 rounded-xl transition-all cursor-pointer text-xs"
 										title="Excluir inspeção"
 									>
 										✕
@@ -590,7 +583,7 @@
 			<div class="flex gap-3">
 				<button
 					onclick={cancelDelete}
-					class="flex-1 py-3 text-center text-xs font-bold text-slate-700 hover:text-slate-900 :text-white bg-slate-100 hover:bg-slate-200 :bg-slate-800/80 rounded-xl transition-all cursor-pointer border border-slate-200"
+					class="flex-1 py-3 text-center text-xs font-bold text-slate-700 hover:text-slate-900  bg-slate-100 hover:bg-slate-200  rounded-xl transition-all cursor-pointer border border-slate-200"
 					disabled={isDeleting}
 				>
 					Cancelar

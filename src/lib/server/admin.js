@@ -1,24 +1,34 @@
-import { getApps, initializeApp, cert } from 'firebase-admin/app';
+import { cert, getApps, initializeApp } from 'firebase-admin/app';
+import { getAuth } from 'firebase-admin/auth';
 import { getFirestore } from 'firebase-admin/firestore';
 import { getMessaging } from 'firebase-admin/messaging';
+import { getStorage } from 'firebase-admin/storage';
 import { env } from '$env/dynamic/private';
 
-if (!getApps().length) {
-    try {
-        if (env.FIREBASE_SERVICE_ACCOUNT) {
-            const serviceAccount = JSON.parse(env.FIREBASE_SERVICE_ACCOUNT);
-            initializeApp({
-                credential: cert(serviceAccount)
-            });
-        } else {
-            console.warn("FIREBASE_SERVICE_ACCOUNT env var is not set. Firebase Admin push notifications will fail.");
-            // Initialize without cert for local dev without service account, though messaging will fail
-            initializeApp();
-        }
-    } catch (err) {
-        console.error('Firebase admin initialization error', err);
-    }
+function initializeAdmin() {
+	if (getApps().length > 0) return getApps()[0];
+
+	if (!env.FIREBASE_SERVICE_ACCOUNT) {
+		throw new Error('FIREBASE_SERVICE_ACCOUNT is required for server APIs.');
+	}
+
+	let serviceAccount;
+	try {
+		serviceAccount = JSON.parse(env.FIREBASE_SERVICE_ACCOUNT);
+	} catch {
+		throw new Error('FIREBASE_SERVICE_ACCOUNT must contain valid JSON.');
+	}
+
+	return initializeApp({
+		credential: cert(serviceAccount),
+		storageBucket:
+			env.FIREBASE_STORAGE_BUCKET || `${serviceAccount.project_id}.firebasestorage.app`
+	});
 }
 
-export const adminDb = getFirestore();
-export const adminMessaging = getMessaging();
+const adminApp = initializeAdmin();
+
+export const adminAuth = getAuth(adminApp);
+export const adminDb = getFirestore(adminApp);
+export const adminMessaging = getMessaging(adminApp);
+export const adminStorage = getStorage(adminApp);

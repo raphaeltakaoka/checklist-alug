@@ -1,17 +1,29 @@
 <script>
   import { onMount } from "svelte";
   import { goto } from "$app/navigation";
-  import { db } from "$lib/firebase.js";
+  import { db } from "$lib/firebaseDb.js";
   import { authState } from "$lib/auth.svelte.js";
-  import { collection, getDocs, query, where } from "firebase/firestore";
+  import {
+    collectionGroup,
+    getDocs,
+    limit,
+    orderBy,
+    query,
+    startAfter,
+    where,
+  } from "firebase/firestore";
   import { fade, fly } from "svelte/transition";
   import Navbar from "$lib/components/Navbar.svelte";
+  import { safeAttachmentUrl } from '$lib/inspection.js';
 
   // Page states
   let tasks = $state([]);
   let projectTagsMap = $state({});
   let loading = $state(true);
   let errorMsg = $state("");
+  let lastDocument = null;
+  let hasMore = $state(true);
+  let loadingMore = $state(false);
 
   // Filter and search states
   let searchQuery = $state("");
@@ -27,34 +39,37 @@
     await fetchAssignedTasks();
   });
 
-  async function fetchAssignedTasks() {
+  async function fetchAssignedTasks({ append = false } = {}) {
     if (!authState.user) {
       loading = false;
       return;
     }
+		if (append && (!hasMore || loadingMore)) return;
 
-    loading = true;
+		if (append) loadingMore = true;
+		else loading = true;
     errorMsg = "";
 
     try {
       const userId = authState.user.uid;
-      const projectsRef = collection(db, "projects");
-      const q = query(
-        projectsRef,
-        where("title", "==", "Entregas e Retiradas"),
-      );
+		const constraints = [
+		  where('assignedUserId', '==', userId),
+		  where('state', '==', 'active'),
+		  orderBy('dueDateKey', 'asc'),
+		  limit(50),
+		];
+		if (append && lastDocument) constraints.push(startAfter(lastDocument));
+		const q = query(collectionGroup(db, 'cards'), ...constraints);
       const querySnapshot = await getDocs(q);
 
       let fetchedItems = [];
-      let tagsMapping = {};
+	  let tagsMapping = append ? { ...projectTagsMap } : {};
 
       querySnapshot.forEach((docSnap) => {
         const data = docSnap.data();
-
-        // Store tag details (id -> { name, color })
-        if (Array.isArray(data.tags)) {
-          data.tags.forEach((tag) => {
-            if (tag && tag.id) {
+		if (Array.isArray(data.boardTags)) {
+		  data.boardTags.forEach((tag) => {
+			if (tag && tag.id) {
               tagsMapping[tag.id] = {
                 name: tag.name || "Tag",
                 color: tag.color || "#64748b",
@@ -63,35 +78,27 @@
           });
         }
 
-        // Traverse columns and items (ignoring 'Monitorar' column)
-        const columns = data.columns || [];
-        columns.forEach((col) => {
-          const colName = col.name || "Geral";
-          if (colName.trim().toLowerCase() === "monitorar") return;
-
-          const items = col.items || [];
-          items.forEach((item) => {
-            if (item && item.assignedUserId === userId) {
-              fetchedItems.push({
-                ...item,
-                columnId: col.id,
-                columnName: colName,
-                projectId: docSnap.id,
-                projectTitle: data.title || "Entregas e Retiradas",
-              });
-            }
-          });
-        });
+		if ((data.columnName || '').trim().toLowerCase() !== 'monitorar') {
+		  fetchedItems.push({
+			...data,
+			id: docSnap.id,
+			projectId: data.boardId,
+			projectTitle: data.boardTitle || 'Projeto',
+		  });
+		}
       });
 
       projectTagsMap = tagsMapping;
-      tasks = fetchedItems;
+	  tasks = append ? [...tasks, ...fetchedItems] : fetchedItems;
+	  lastDocument = querySnapshot.docs.at(-1) || lastDocument;
+	  hasMore = querySnapshot.size === 50;
     } catch (e) {
       console.error("Erro ao carregar tarefas do Firestore:", e);
       errorMsg =
         "Ocorreu um erro ao carregar suas tarefas da nuvem. Verifique sua conexão.";
     } finally {
       loading = false;
+	  loadingMore = false;
     }
   }
 
@@ -198,16 +205,16 @@
   // File Handling Helpers
   function getFileUrl(fileItem) {
     if (!fileItem) return "";
-    if (typeof fileItem === "string") return fileItem;
-    return (
+	if (typeof fileItem === "string") return safeAttachmentUrl(fileItem);
+	return safeAttachmentUrl(
       fileItem.url ||
       fileItem.downloadUrl ||
       fileItem.src ||
       fileItem.link ||
       fileItem.data ||
       fileItem.path ||
-      ""
-    );
+	  "",
+	);
   }
 
   function getFileName(fileItem, index) {
@@ -454,6 +461,17 @@
         <span class="text-base">⚠️</span>
         <span>{errorMsg}</span>
       </div>
+	  {#if hasMore}
+		<div class="flex justify-center pt-5">
+		  <button
+			onclick={() => fetchAssignedTasks({ append: true })}
+			disabled={loadingMore}
+			class="px-5 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-bold text-slate-700 disabled:opacity-50"
+		  >
+			{loadingMore ? 'Carregando…' : 'Carregar mais tarefas'}
+		  </button>
+		</div>
+	  {/if}
     {/if}
 
     <!-- Main Task Grid / State Display -->
@@ -541,7 +559,7 @@
               <!-- Prominent Date & Time Banner Box -->
               {#if task.dueDateTime}
                 <div
-                  class="bg-blue-50/80 border border-blue-150 rounded-xl p-3 flex items-center gap-3"
+                  class="bg-blue-50/80 border border-blue-200 rounded-xl p-3 flex items-center gap-3"
                 >
                   <div
                     class="p-2 bg-blue-600 text-white rounded-lg flex items-center justify-center shadow-xs"
@@ -604,7 +622,7 @@
               <!-- Description preview if available -->
               {#if task.description}
                 <p
-                  class="text-xs text-slate-600 line-clamp-2 leading-relaxed bg-slate-50 p-3 rounded-xl border border-slate-150"
+                  class="text-xs text-slate-600 line-clamp-2 leading-relaxed bg-slate-50 p-3 rounded-xl border border-slate-200"
                 >
                   {task.description}
                 </p>
@@ -632,7 +650,7 @@
 
                 {#if Array.isArray(task.files) && task.files.length > 0}
                   <span
-                    class="text-[11px] font-extrabold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-150 flex items-center gap-1"
+                    class="text-[11px] font-extrabold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-200 flex items-center gap-1"
                   >
                     📎 {task.files.length}
                     {task.files.length === 1 ? "anexo" : "anexos"}
@@ -682,7 +700,7 @@
     >
       <!-- Modal Header -->
       <div
-        class="p-5 sm:p-6 border-b border-slate-150 flex items-start justify-between gap-4 bg-slate-50/50"
+        class="p-5 sm:p-6 border-b border-slate-200 flex items-start justify-between gap-4 bg-slate-50/50"
       >
         <div class="space-y-1.5 flex-1 pr-4">
           <div class="flex flex-wrap items-center gap-2">
@@ -746,7 +764,7 @@
         <!-- Date & Time Box -->
         {#if selectedTask.dueDateTime}
           <div
-            class="bg-blue-50/80 border border-blue-150 rounded-2xl p-4 flex items-center gap-3.5"
+            class="bg-blue-50/80 border border-blue-200 rounded-2xl p-4 flex items-center gap-3.5"
           >
             <div
               class="p-2.5 bg-blue-600 text-white rounded-xl flex items-center justify-center shadow-xs"
@@ -793,7 +811,7 @@
             </div>
           {:else}
             <p
-              class="text-xs text-slate-400 italic bg-slate-50/50 p-3 rounded-xl border border-slate-150"
+              class="text-xs text-slate-400 italic bg-slate-50/50 p-3 rounded-xl border border-slate-200"
             >
               Nenhuma descrição informada para esta tarefa.
             </p>
@@ -849,6 +867,7 @@
                       <img
                         src={getFileUrl(file)}
                         alt={getFileName(file, index)}
+                        loading="lazy"
                         class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                       />
                       <div
@@ -893,7 +912,7 @@
             {/if}
           {:else}
             <div
-              class="p-4 bg-slate-50 rounded-2xl border border-slate-150 text-center text-xs text-slate-400 font-medium"
+              class="p-4 bg-slate-50 rounded-2xl border border-slate-200 text-center text-xs text-slate-400 font-medium"
             >
               Nenhum arquivo ou imagem anexado a esta tarefa.
             </div>
@@ -903,7 +922,7 @@
 
       <!-- Modal Footer -->
       <div
-        class="p-4 sm:p-5 border-t border-slate-150 bg-slate-50/50 flex justify-end"
+        class="p-4 sm:p-5 border-t border-slate-200 bg-slate-50/50 flex justify-end"
       >
         <button
           onclick={closeTaskModal}

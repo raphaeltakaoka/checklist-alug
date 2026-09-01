@@ -1,73 +1,198 @@
-import { db, storage } from "./firebase.js";
-import { doc, setDoc } from "firebase/firestore";
-import { ref, uploadString, getDownloadURL } from "firebase/storage";
-import { deleteInspection } from "./db.js";
+import { storage } from '$lib/firebaseStorage.js';
+import { getInspection, saveInspection } from '$lib/db.js';
+import { getDownloadURL, ref, uploadBytesResumable } from 'firebase/storage';
+import { authenticatedFetch } from '$lib/api.js';
 
-/**
- * Helper to upload a base64 photo to Firebase Storage and return its public URL.
- * If it is already a URL or empty, returns it as is.
- */
-async function uploadPhoto(path, dataUrl) {
-	if (!dataUrl || typeof dataUrl !== "string" || !dataUrl.startsWith("data:")) {
-		return dataUrl;
-	}
-	const storageRef = ref(storage, path);
-	await uploadString(storageRef, dataUrl, "data_url");
-	return await getDownloadURL(storageRef);
+const UPLOAD_CONCURRENCY = 2;
+
+async function dataUrlToBlob(value) {
+	const response = await fetch(value);
+	if (!response.ok) throw new Error('Could not prepare local media for upload.');
+	return response.blob();
 }
 
-/**
- * Synchronizes a completed inspection to Firebase Storage and Cloud Firestore.
- * Converts all local base64 photos to permanent HTTPS storage links.
- * Updates local IndexedDB with synced: true status and lightweight URLs.
- */
-export async function syncInspectionToCloud(inspection) {
-	// Create a clean deep copy to avoid modifying original reactive proxy state directly before success
-	const report = JSON.parse(JSON.stringify(inspection));
+async function toBlob(value) {
+	if (value instanceof Blob) return value;
+	if (typeof value === 'string' && value.startsWith('data:')) return dataUrlToBlob(value);
+	return null;
+}
 
-	// 1. Upload license/ID photo if present
-	if (report.clientLicensePhoto) {
-		report.clientLicensePhoto = await uploadPhoto(
-			`checklists/${report.id}/license.jpg`,
-			report.clientLicensePhoto
-		);
+function extensionFor(contentType) {
+	return {
+		'image/jpeg': 'jpg',
+		'image/png': 'png',
+		'image/webp': 'webp',
+		'image/svg+xml': 'svg'
+	}[contentType] || 'bin';
+}
+
+function uploadBlob(path, blob) {
+	const objectRef = ref(storage, path);
+	const task = uploadBytesResumable(objectRef, blob, {
+		contentType: blob.type || 'application/octet-stream',
+		cacheControl: 'private,max-age=31536000,immutable'
+	});
+	return new Promise((resolve, reject) => {
+		task.on('state_changed', undefined, reject, async () => {
+			resolve({ url: await getDownloadURL(task.snapshot.ref), path });
+		});
+	});
+}
+
+async function runWithConcurrency(tasks, concurrency = UPLOAD_CONCURRENCY) {
+	const results = new Array(tasks.length);
+	let nextIndex = 0;
+	async function worker() {
+		while (nextIndex < tasks.length) {
+			const index = nextIndex;
+			nextIndex += 1;
+			results[index] = await tasks[index]();
+		}
 	}
+	await Promise.all(Array.from({ length: Math.min(concurrency, tasks.length) }, worker));
+	return results;
+}
 
-	// 1.5 Upload car diagram if present
-	if (report.carDiagramImage) {
-		report.carDiagramImage = await uploadPhoto(
-			`checklists/${report.id}/car_diagram.svg`,
-			report.carDiagramImage
-		);
+function dateToISOString(value, fallback = new Date()) {
+	const date = value instanceof Date ? value : new Date(value);
+	return (Number.isNaN(date.getTime()) ? fallback : date).toISOString();
+}
+
+function cleanPartStates(partStates = {}) {
+	const clean = {};
+	for (const [partKey, state] of Object.entries(partStates)) {
+		if (!state || typeof state !== 'object') continue;
+		clean[partKey] = {
+			status: state.status || 'none',
+			comments: String(state.comments || '').slice(0, 1000),
+			photos: Array.isArray(state.photos) ? state.photos.filter(Boolean).slice(0, 6) : [],
+			photoPaths: Array.isArray(state.photoPaths)
+				? state.photoPaths.filter((path) => typeof path === 'string').slice(0, 6)
+				: []
+		};
 	}
+	return clean;
+}
 
-	// 2. Upload damage photos for all parts
-	if (report.partStates) {
-		for (const partKey in report.partStates) {
-			const part = report.partStates[partKey];
-			if (part.photos && part.photos.length > 0) {
-				const uploadedPhotos = [];
-				for (let i = 0; i < part.photos.length; i++) {
-					const photoUrl = part.photos[i];
-					const uploadedUrl = await uploadPhoto(
-						`checklists/${report.id}/parts/${partKey}_${i}.jpg`,
-						photoUrl
-					);
-					uploadedPhotos.push(uploadedUrl);
+async function uploadInspectionMedia(report) {
+	const uploads = [];
+	const addUpload = async (value, relativePath, apply) => {
+		const blob = await toBlob(value);
+		if (!blob) return;
+		const extension = extensionFor(blob.type);
+		const path = `checklists/${report.ownerUid}/${report.id}/${relativePath}.${extension}`;
+		uploads.push(async () => {
+			const uploaded = await uploadBlob(path, blob);
+			apply(uploaded);
+			return uploaded.path;
+		});
+	};
+
+	await addUpload(report.clientLicensePhoto, 'license', ({ url, path }) => {
+		report.clientLicensePhoto = url;
+		report.clientLicensePhotoPath = path;
+	});
+	await addUpload(report.clientSignature, 'signature', ({ url, path }) => {
+		report.clientSignature = url;
+		report.clientSignaturePath = path;
+	});
+	await addUpload(report.carDiagramImage, 'car-diagram', ({ url, path }) => {
+		report.carDiagramImage = url;
+		report.carDiagramImagePath = path;
+	});
+
+	for (const [partKey, state] of Object.entries(report.partStates || {})) {
+		state.photoPaths = Array.isArray(state.photoPaths)
+			? state.photoPaths.slice(0, state.photos?.length || 0)
+			: [];
+		for (let index = 0; index < (state.photos || []).length; index += 1) {
+			await addUpload(
+				state.photos[index],
+				`parts/${partKey}/${index}`,
+				({ url, path }) => {
+					state.photos[index] = url;
+					state.photoPaths[index] = path;
 				}
-				part.photos = uploadedPhotos;
-			}
+			);
 		}
 	}
 
-	// 3. Save report to Cloud Firestore (collection "checklists")
-	const docRef = doc(db, "checklists", report.id);
-	// Ensure synced status is true
-	report.synced = true;
-	await setDoc(docRef, report);
-
-	// 4. Remove it from IndexedDB after successful synchronization
-	await deleteInspection(report.id);
-
-	return report;
+	return runWithConcurrency(uploads);
 }
+
+function buildCloudReport(localReport) {
+	return {
+		schemaVersion: 2,
+		id: localReport.id,
+		ownerUid: localReport.ownerUid,
+		licensePlate: String(localReport.licensePlate || '').toUpperCase(),
+		inspectionType: localReport.inspectionType,
+		inspectorName: String(localReport.inspectorName || '').slice(0, 120),
+		clientName: String(localReport.clientName || '').slice(0, 200),
+		inspectionDateTime: dateToISOString(localReport.inspectionDateTime),
+		clientLicensePhoto: localReport.clientLicensePhoto || '',
+		clientLicensePhotoPath: localReport.clientLicensePhotoPath || '',
+		clientSignature: localReport.clientSignature || '',
+		clientSignaturePath: localReport.clientSignaturePath || '',
+		carDiagramImage: localReport.carDiagramImage || '',
+		carDiagramImagePath: localReport.carDiagramImagePath || '',
+		mileage: String(localReport.mileage || '').slice(0, 20),
+		fuelLevel: localReport.fuelLevel,
+		hasDocument: Boolean(localReport.hasDocument),
+		hasChildSeat: Boolean(localReport.hasChildSeat),
+		hasEToll: Boolean(localReport.hasEToll),
+		partStates: cleanPartStates(localReport.partStates),
+		status: 'completed',
+		synced: true
+	};
+}
+
+export async function syncInspectionToCloud(inspection) {
+	const ownerUid = inspection?.ownerUid;
+	if (!ownerUid || !inspection?.id) throw new Error('Inspection ownership is required for sync.');
+	const hydrated = await getInspection(ownerUid, inspection.id);
+	if (!hydrated) throw new Error('The local inspection could not be found.');
+
+	await saveInspection({
+		...hydrated,
+		status: 'completed',
+		syncState: 'uploading',
+		lastSyncError: ''
+	});
+
+	try {
+		await uploadInspectionMedia(hydrated);
+		const response = await authenticatedFetch('/api/checklists/sync', {
+			method: 'POST',
+			body: JSON.stringify(buildCloudReport(hydrated))
+		});
+		const { report: cloudReport } = await response.json();
+
+		const syncedReport = {
+			...hydrated,
+			...cloudReport,
+			inspectionDateTime: hydrated.inspectionDateTime,
+			createdAt: hydrated.createdAt,
+			updatedAt: new Date().toISOString(),
+			status: 'synced',
+			syncState: 'synced',
+			synced: true,
+			retryCount: 0,
+			lastSyncError: ''
+		};
+		await saveInspection(syncedReport);
+		return syncedReport;
+	} catch (error) {
+		await saveInspection({
+			...hydrated,
+			status: 'completed',
+			syncState: 'error',
+			synced: false,
+			retryCount: Number(hydrated.retryCount || 0) + 1,
+			lastSyncError: String(error?.message || error).slice(0, 500)
+		});
+		throw error;
+	}
+}
+
+export const __syncTestUtils = { runWithConcurrency, extensionFor, cleanPartStates };

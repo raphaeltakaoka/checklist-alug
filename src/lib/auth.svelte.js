@@ -5,6 +5,7 @@ class AuthState {
 	user = $state(null);
 	loading = $state(true);
 	roles = $state({});
+	displayName = $state('');
 
 	constructor() {
 		if (typeof window !== "undefined") {
@@ -27,38 +28,34 @@ class AuthState {
 						}
 						
 						const roles = idTokenResult.claims.roles;
-						const hasAnyPermission = roles && Object.values(roles).some(roleArray => Array.isArray(roleArray) && roleArray.length > 0);
+						const canUseChecklist =
+							(Array.isArray(roles?.operations) && roles.operations.includes('read')) ||
+							(Array.isArray(roles?.administrator) && roles.administrator.includes('read'));
 
-						if (!idTokenResult.claims || !hasAnyPermission) {
-							console.warn("User does not have any permissions assigned. Denying access.");
+						if (!canUseChecklist) {
+							console.warn("User does not have Checklist read permission. Denying access.");
 							await auth.signOut();
 							this.user = null;
 							this.roles = {};
-							localStorage.removeItem("authenticated");
-							localStorage.removeItem("inspectorName");
+							this.displayName = '';
 							this.loading = false;
 							return;
 						}
 
 						this.user = u;
 						this.roles = roles;
-						// Maintain local storage compatibility for other parts of the application
-						localStorage.setItem("authenticated", "true");
-						// Try to resolve display name or default to the local part of email
-						const resolvedName = u.displayName || u.email.split("@")[0];
-						localStorage.setItem("inspectorName", resolvedName);
+						this.displayName = u.displayName || u.email?.split('@')[0] || 'Inspetor';
 					} catch (error) {
 						console.error("Error during custom claims verification:", error);
 						await auth.signOut();
 						this.user = null;
-						localStorage.removeItem("authenticated");
-						localStorage.removeItem("inspectorName");
+						this.roles = {};
+						this.displayName = '';
 					}
 				} else {
 					this.user = null;
 					this.roles = {};
-					localStorage.removeItem("authenticated");
-					localStorage.removeItem("inspectorName");
+					this.displayName = '';
 				}
 				this.loading = false;
 			});
@@ -69,6 +66,10 @@ class AuthState {
 
 	hasPermission(roleGroup, permission) {
 		return Array.isArray(this.roles[roleGroup]) && this.roles[roleGroup].includes(permission);
+	}
+
+	canInspect(permission) {
+		return this.hasPermission('administrator', permission) || this.hasPermission('operations', permission);
 	}
 }
 
