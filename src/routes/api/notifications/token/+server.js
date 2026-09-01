@@ -1,6 +1,6 @@
 import { json } from '@sveltejs/kit';
 import { adminDb } from '$lib/server/admin';
-import { apiErrorResponse, requireAuth } from '$lib/server/auth';
+import { ApiError, apiErrorResponse, requireAuth } from '$lib/server/auth';
 import { boundedString, readExactJson } from '$lib/server/requestValidation';
 
 async function notificationToken(request) {
