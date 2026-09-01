@@ -2,6 +2,7 @@ import 'fake-indexeddb/auto';
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
 	__dbTestUtils,
+	deleteInspection,
 	getAllInspections,
 	getInspection,
 	openDB,
@@ -70,6 +71,56 @@ describe('owner-scoped inspection database', () => {
 		const detail = await getInspection('owner-a', 'media');
 		expect(detail.clientLicensePhoto).toMatch(/^data:image\/jpeg;base64,/);
 		expect(detail.partStates.hood.photos[0]).toMatch(/^data:image\/jpeg;base64,/);
+	});
+
+	it('hydrates multiple media values after the IndexedDB transaction has closed', async () => {
+		const photo = new Blob(['photo-bytes'], { type: 'image/jpeg' });
+		await saveInspection(
+			report('owner-a', 'delayed-media', {
+				clientLicensePhoto: photo,
+				clientSignature: new Blob(['signature'], { type: 'image/png' }),
+				partStates: { hood: { status: 'scratch', comments: '', photos: [photo] } }
+			})
+		);
+
+		const originalArrayBuffer = Blob.prototype.arrayBuffer;
+		Blob.prototype.arrayBuffer = async function () {
+			await new Promise((resolve) => setTimeout(resolve, 0));
+			return originalArrayBuffer.call(this);
+		};
+		try {
+			const detail = await getInspection('owner-a', 'delayed-media');
+			expect(detail.clientLicensePhoto).toMatch(/^data:image\/jpeg;base64,/);
+			expect(detail.clientSignature).toMatch(/^data:image\/png;base64,/);
+			expect(detail.partStates.hood.photos[0]).toMatch(/^data:image\/jpeg;base64,/);
+		} finally {
+			Blob.prototype.arrayBuffer = originalArrayBuffer;
+		}
+	});
+
+	it('replaces stale media and deletes it with the inspection', async () => {
+		await saveInspection(report('owner-a', 'replace-media', {
+			clientLicensePhoto: new Blob(['old'], { type: 'image/jpeg' })
+		}));
+		await saveInspection(report('owner-a', 'replace-media', {
+			clientSignature: new Blob(['new'], { type: 'image/png' })
+		}));
+
+		const database = await openDB();
+		const readMedia = async () => {
+			const transaction = database.transaction(__dbTestUtils.MEDIA_STORE, 'readonly');
+			return new Promise((resolve, reject) => {
+				const request = transaction.objectStore(__dbTestUtils.MEDIA_STORE)
+					.index('ownerInspection')
+					.getAll(['owner-a', 'replace-media']);
+				request.onsuccess = () => resolve(request.result);
+				request.onerror = () => reject(request.error);
+			});
+		};
+
+		expect((await readMedia()).map((item) => item.key)).toEqual(['clientSignature']);
+		await deleteInspection('owner-a', 'replace-media');
+		expect(await readMedia()).toEqual([]);
 	});
 
 	it('retains drafts while pruning only old synced history', async () => {

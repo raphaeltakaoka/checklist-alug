@@ -142,13 +142,18 @@ async function hydrateMedia(database, report) {
 	const hydrated = structuredClone(report);
 	const transaction = database.transaction(MEDIA_STORE, 'readonly');
 	const completed = transactionComplete(transaction);
-	const store = transaction.objectStore(MEDIA_STORE);
+	const records = await requestResult(
+		transaction.objectStore(MEDIA_STORE).index('ownerInspection').getAll([
+			report.ownerUid,
+			report.id
+		])
+	);
+	await completed;
+	const mediaByKey = new Map(records.map((record) => [record.key, record.blob]));
 	const resolveValue = async (value) => {
 		if (typeof value !== 'string' || !value.startsWith(MEDIA_PREFIX)) return value;
-		const record = await requestResult(
-			store.get([report.ownerUid, report.id, value.slice(MEDIA_PREFIX.length)])
-		);
-		return record?.blob ? blobToDataUrl(record.blob) : null;
+		const blob = mediaByKey.get(value.slice(MEDIA_PREFIX.length));
+		return blob ? blobToDataUrl(blob) : null;
 	};
 
 	for (const field of ['clientLicensePhoto', 'clientSignature', 'carDiagramImage']) {
@@ -159,8 +164,30 @@ async function hydrateMedia(database, report) {
 			state.photos = await Promise.all(state.photos.map(resolveValue));
 		}
 	}
-	await completed;
 	return hydrated;
+}
+
+function replaceStoredInspection(database, storedReport, media) {
+	const transaction = database.transaction([INSPECTION_STORE, MEDIA_STORE], 'readwrite');
+	const completed = transactionComplete(transaction);
+	const mediaStore = transaction.objectStore(MEDIA_STORE);
+	const cursorRequest = mediaStore.index('ownerInspection').openCursor([
+		storedReport.ownerUid,
+		storedReport.id
+	]);
+
+	cursorRequest.onsuccess = () => {
+		const cursor = cursorRequest.result;
+		if (cursor) {
+			cursor.delete();
+			cursor.continue();
+			return;
+		}
+		for (const record of media) mediaStore.put(record);
+		transaction.objectStore(INSPECTION_STORE).put(storedReport);
+	};
+
+	return completed;
 }
 
 export async function saveInspection(inspection) {
@@ -175,16 +202,7 @@ export async function saveInspection(inspection) {
 			...inspection,
 			updatedAt: new Date().toISOString()
 		});
-		const transaction = database.transaction([INSPECTION_STORE, MEDIA_STORE], 'readwrite');
-		const completed = transactionComplete(transaction);
-		const mediaStore = transaction.objectStore(MEDIA_STORE);
-		const existingKeys = await requestResult(
-			mediaStore.index('ownerInspection').getAllKeys([inspection.ownerUid, inspection.id])
-		);
-		for (const key of existingKeys) mediaStore.delete(key);
-		for (const record of media) mediaStore.put(record);
-		transaction.objectStore(INSPECTION_STORE).put(storedReport);
-		await completed;
+		await replaceStoredInspection(database, storedReport, media);
 		await pruneSyncedInspections(inspection.ownerUid);
 	} catch (error) {
 		throw normalizeStorageError(error);
@@ -222,9 +240,15 @@ export async function deleteInspection(ownerUid, id) {
 	const transaction = database.transaction([INSPECTION_STORE, MEDIA_STORE], 'readwrite');
 	const completed = transactionComplete(transaction);
 	transaction.objectStore(INSPECTION_STORE).delete([ownerUid, id]);
-	const mediaStore = transaction.objectStore(MEDIA_STORE);
-	const mediaKeys = await requestResult(mediaStore.index('ownerInspection').getAllKeys([ownerUid, id]));
-	for (const key of mediaKeys) mediaStore.delete(key);
+	const cursorRequest = transaction.objectStore(MEDIA_STORE)
+		.index('ownerInspection')
+		.openCursor([ownerUid, id]);
+	cursorRequest.onsuccess = () => {
+		const cursor = cursorRequest.result;
+		if (!cursor) return;
+		cursor.delete();
+		cursor.continue();
+	};
 	await completed;
 }
 
