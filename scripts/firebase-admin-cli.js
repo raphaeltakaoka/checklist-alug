@@ -55,10 +55,11 @@ export function initializeGuardedAdmin() {
 		);
 	}
 
+	const credential = cert(serviceAccount);
 	const app =
 		getApps()[0] ||
 		initializeApp({
-			credential: cert(serviceAccount),
+			credential,
 			projectId: EXPECTED_PROJECT_ID,
 			storageBucket:
 				process.env.FIREBASE_STORAGE_BUCKET || `${EXPECTED_PROJECT_ID}.firebasestorage.app`
@@ -67,7 +68,8 @@ export function initializeGuardedAdmin() {
 	return {
 		auth: getAuth(app),
 		db: getFirestore(app),
-		bucket: getStorage(app).bucket()
+		bucket: getStorage(app).bucket(),
+		credential
 	};
 }
 

@@ -13,6 +13,7 @@
 		"test:rules": "node scripts/run-shared-rules-tests.js",
 		"test": "npm run test:unit && npm run check && npm run build",
 		"verify": "npm test && npm run test:rules && npm audit --omit=dev",
+		"ops:record-baseline": "node --env-file-if-exists=.env scripts/record-rollout-baseline.js",
 		"ops:reset": "node --env-file-if-exists=.env scripts/reset-checklist-data.js",
 		"ops:expand-claims": "node --env-file-if-exists=.env scripts/expand-operations-claims.js",
 		"ops:rollback-claims": "node --env-file-if-exists=.env scripts/rollback-operations-claims.js"

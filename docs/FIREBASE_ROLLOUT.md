@@ -16,8 +16,8 @@ It preserves Authentication accounts, users, projects, cards, CRM data, other St
 ## Preflight
 
 1. Run `npm run verify` in Checklist and `npm test && npm run test:rules` in CRM.
-2. Record the current Vercel production deployment ID and URL.
-3. Record the current deployed Firestore and Storage rules revisions.
+2. Record the current Vercel production deployment ID, Firebase rules revisions/source, and redacted claims with `npm run ops:record-baseline -- --vercel-deployment dpl_...`.
+3. Keep the generated `artifacts/private/rollout-baseline.json` private; it contains the exact prior rules source needed for rollback.
 4. Run `npm run ops:expand-claims` without `--execute`; this prints only UID hashes and permission changes.
 5. Run `npm run ops:reset` without `--execute`; verify every collection count and the exact `checklists/` Storage prefix.
 6. Deploy the CRM indexes early and wait for every required index to become ready.
