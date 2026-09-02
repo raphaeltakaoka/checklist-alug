@@ -1,325 +1,193 @@
 <script>
-	import { onMount } from "svelte";
-	import { goto } from "$app/navigation";
-	import { db } from "$lib/firebaseDb.js";
-	import { collection, getDocs, query, orderBy, limit, startAfter, where } from "firebase/firestore";
-	import Navbar from "$lib/components/Navbar.svelte";
+	import { onMount } from 'svelte';
+	import { page } from '$app/state';
+	import { db } from '$lib/firebaseDb.js';
+	import {
+		collection,
+		getDocs,
+		query,
+		orderBy,
+		limit,
+		startAfter,
+		where
+	} from 'firebase/firestore';
+	import { getAllInspections } from '$lib/db.js';
 	import { authState } from '$lib/auth.svelte.js';
-	import { countDamages, normalizeCloudInspection } from '$lib/inspection.js';
-
-	// Page states
-	let checklists = $state([]);
+	import { normalizeCloudInspection } from '$lib/inspection.js';
+	import Icon from '$lib/components/Icon.svelte';
+	import Notice from '$lib/components/Notice.svelte';
+	import EmptyState from '$lib/components/EmptyState.svelte';
+	import InspectionRow from '$lib/components/InspectionRow.svelte';
+	let source = $state('cloud');
+	let cloud = $state([]);
+	let local = $state([]);
 	let loading = $state(true);
-	let errorMsg = $state("");
+	let loadingMore = $state(false);
+	let error = $state('');
+	let offline = $state(false);
 	let lastDocument = null;
 	let hasMore = $state(true);
-	let loadingMore = $state(false);
-
-	// Search & Filter state
-	let searchQuery = $state("");
-	let filterType = $state("All");
-
-	onMount(async () => {
-		await loadChecklists();
-
-		// Force light theme
-		document.documentElement.classList.remove("dark");
-	});
-
-	async function loadChecklists({ append = false } = {}) {
-		if (!authState.user || (append && (!hasMore || loadingMore))) return;
+	let search = $state('');
+	let type = $state('All');
+	let request = 0;
+	let records = $derived(source === 'cloud' ? cloud : local);
+	let filtered = $derived(
+		records.filter(
+			(record) =>
+				`${record.licensePlate} ${record.clientName}`
+					.toLocaleLowerCase()
+					.includes(search.trim().toLocaleLowerCase()) &&
+				(type === 'All' || record.inspectionType === type)
+		)
+	);
+	async function load(append = false) {
+		if (append && (loadingMore || !hasMore)) return;
+		const token = ++request;
+		error = '';
 		if (append) loadingMore = true;
 		else loading = true;
 		try {
-			const constraints = [];
-			if (!authState.hasPermission('administrator', 'read')) {
-				constraints.push(where('ownerUid', '==', authState.user.uid));
+			if (source === 'local') {
+				local = await getAllInspections(authState.user.uid);
+				return;
 			}
+			if (offline) throw new Error('offline');
+			const constraints = [];
+			if (!authState.hasPermission('administrator', 'read'))
+				constraints.push(where('ownerUid', '==', authState.user.uid));
 			constraints.push(orderBy('inspectionDateTime', 'desc'), limit(20));
 			if (append && lastDocument) constraints.push(startAfter(lastDocument));
-			const q = query(collection(db, 'checklist_summaries'), ...constraints);
-			const querySnapshot = await getDocs(q);
-			const list = querySnapshot.docs.map((snapshot) =>
-				normalizeCloudInspection(snapshot.data(), snapshot.id)
+			const snapshot = await getDocs(
+				query(collection(db, 'checklist_summaries'), ...constraints)
 			);
-			checklists = append ? [...checklists, ...list] : list;
-			lastDocument = querySnapshot.docs.at(-1) || lastDocument;
-			hasMore = querySnapshot.size === 20;
-		} catch (e) {
-			console.error("Failed to load checklists from Firestore:", e);
-			errorMsg = "Falha ao carregar os checklists da nuvem. Verifique sua conexão.";
+			if (token !== request) return;
+			const incoming = snapshot.docs.map((doc) => ({
+				...normalizeCloudInspection(doc.data(), doc.id),
+				synced: true
+			}));
+			cloud = append ? [...cloud, ...incoming] : incoming;
+			lastDocument = snapshot.docs.at(-1) || null;
+			hasMore = snapshot.size === 20;
+		} catch {
+			if (token === request)
+				error =
+					source === 'local'
+						? 'Não foi possível abrir o histórico deste dispositivo.'
+						: offline
+							? 'Sem conexão para consultar as vistorias sincronizadas. Abra “Neste dispositivo” para ver os registros disponíveis offline.'
+							: 'Não foi possível carregar o histórico. Tente novamente.';
 		} finally {
-			loading = false;
-			loadingMore = false;
+			if (token === request) {
+				loading = false;
+				loadingMore = false;
+			}
 		}
 	}
-
-	// Filter checklists based on search query and type filter
-	const filteredChecklists = $derived(
-		checklists.filter((i) => {
-			const matchesSearch =
-				(i.licensePlate || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-				(i.clientName || '').toLowerCase().includes(searchQuery.toLowerCase());
-			
-			const matchesType =
-				filterType === "All" || i.inspectionType === filterType;
-
-			return matchesSearch && matchesType;
-		})
-	);
-
+	function changeSource(next) {
+		if (source === next) return;
+		source = next;
+		load();
+	}
+	onMount(() => {
+		offline = !navigator.onLine;
+		if (offline || page.url.searchParams.get('source') === 'local')
+			source = 'local';
+		load();
+		const update = () => (offline = !navigator.onLine);
+		window.addEventListener('online', update);
+		window.addEventListener('offline', update);
+		return () => {
+			request++;
+			window.removeEventListener('online', update);
+			window.removeEventListener('offline', update);
+		};
+	});
 </script>
 
-<svelte:head>
-	<title>Checklists na Nuvem - Checklist Alug</title>
-	<meta
-		name="description"
-		content="Checklist Alug - Veja relatórios de inspeção anteriores armazenados na nuvem."
-	/>
-</svelte:head>
-
-<div
-	class="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans select-none"
->
-	<!-- Top Premium Navbar -->
-	<Navbar showDashboard={true} />
-
-	<!-- Main Body Wrapper -->
-	<main class="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6">
-		<div class="space-y-6">
-			<!-- Hero Summary Dashboard -->
-			<div
-				class="bg-white border border-slate-200 shadow-md rounded-3xl p-6 sm:p-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-6"
-			>
-				<div>
-					<h2
-						class="text-2xl sm:text-3xl font-black text-slate-900 leading-tight"
-					>
-						Vistorias na Nuvem
-					</h2>
-					<p class="text-xs text-slate-500 mt-2">
-						Central de auditoria digital com histórico paginado de vistorias sincronizadas.
-					</p>
-				</div>
-
-				<button
-					onclick={() => goto("/dashboard")}
-					class="w-full md:w-auto px-5 py-3 bg-white border border-slate-200 hover:bg-slate-50  text-slate-700 font-bold rounded-2xl text-sm transition-all cursor-pointer shadow-sm flex items-center justify-center gap-2"
-				>
-					← Voltar ao Painel
-				</button>
-			</div>
-
-			<!-- Search & Filter Controls -->
-			<div
-				class="flex flex-col md:flex-row gap-4 items-center justify-between mt-6"
-			>
-				<div>
-					<h3
-						class="text-lg font-bold text-slate-800"
-					>
-						Histórico de Checklists
-					</h3>
-					<p class="text-xs text-slate-500">
-						Exibindo os laudos e assinaturas mais recentes do servidor.
-					</p>
-				</div>
-
-				<div class="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
-					<!-- Search bar -->
-					<div class="relative w-full sm:w-64">
-						<input
-							type="text"
-							bind:value={searchQuery}
-							placeholder="Buscar por placa ou cliente..."
-							class="w-full bg-white border border-slate-200 focus:border-primary rounded-xl pl-10 pr-4 py-2.5 text-slate-800 outline-none transition-all placeholder:text-slate-400 text-sm"
-						/>
-						<svg
-							xmlns="http://www.w3.org/2000/svg"
-							class="h-4.5 w-4.5 text-slate-400 absolute left-3 top-3.5"
-							fill="none"
-							viewBox="0 0 24 24"
-							stroke="currentColor"
-						>
-							<path
-								stroke-linecap="round"
-								stroke-linejoin="round"
-								stroke-width="2"
-								d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-							/>
-						</svg>
-					</div>
- 
-					<!-- Filter dropdown -->
-					<select
-						bind:value={filterType}
-						class="bg-white border border-slate-200 focus:border-primary rounded-xl px-4 py-2.5 text-slate-800 text-sm outline-none transition-all cursor-pointer font-bold"
-					>
-						<option value="All">Todos os tipos</option>
-						<option value="Entrega">🔑 Entrega</option>
-						<option value="Retirada">🚗 Retirada</option>
-					</select>
-				</div>
-			</div>
-
-			<!-- Grid List / Loading / Error / Empty States -->
-			{#if loading}
-				<!-- Skeleton Loader -->
-				<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-6">
-					{#each Array(6) as _, i (i)}
-						<div
-							class="bg-white border border-slate-200 rounded-2xl p-5 space-y-4 animate-pulse"
-						>
-							<div class="h-6 w-1/3 bg-slate-200 rounded-lg"></div>
-							<div class="h-16 bg-slate-100 rounded-xl"></div>
-							<div class="h-10 bg-slate-200 rounded-xl"></div>
-						</div>
-					{/each}
-				</div>
-			{:else if errorMsg}
-				<div
-					class="p-12 mt-6 border border-red-250 bg-red-50/20 rounded-3xl text-center space-y-4"
-				>
-					<div
-						class="w-12 h-12 bg-red-100 rounded-2xl flex items-center justify-center mx-auto text-red-600 text-xl font-bold"
-					>
-						⚠️
-					</div>
-					<div class="space-y-1">
-						<h4 class="text-base font-bold text-red-600">Falha ao conectar</h4>
-						<p class="text-xs text-slate-500 max-w-xs mx-auto">{errorMsg}</p>
-					</div>
-					<button
-						onclick={() => window.location.reload()}
-						class="px-5 py-2.5 bg-red-600 hover:bg-red-500 text-white font-bold rounded-xl text-xs transition-all cursor-pointer"
-					>
-						Tentar Novamente
-					</button>
-				</div>
-			{:else if filteredChecklists.length === 0}
-				<div
-					class="p-12 mt-6 border border-dashed border-slate-300 bg-white rounded-3xl text-center space-y-4"
-				>
-					<div
-						class="w-12 h-12 bg-slate-100 rounded-2xl flex items-center justify-center mx-auto text-slate-400"
-					>
-						📋
-					</div>
-					<div class="space-y-1">
-						<h4 class="text-base font-bold text-slate-800">
-							Nenhum checklist correspondente
-						</h4>
-						<p class="text-xs text-slate-500 max-w-xs mx-auto">
-							{searchQuery || filterType !== "All"
-								? "Nenhum resultado corresponde aos filtros de busca atuais."
-								: "Nenhum checklist sincronizado na nuvem foi encontrado."}
-						</p>
-					</div>
-				</div>
-			{:else}
-				<!-- Grid checklists list -->
-				<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-6">
-					{#each filteredChecklists as rep (rep.id || rep.licensePlate + rep.inspectionDateTime)}
-						<div
-							class="bg-white hover:bg-slate-50/50  border border-slate-200 hover:border-slate-300  shadow-sm hover:shadow-md rounded-2xl p-5 transition-all flex flex-col justify-between group relative overflow-hidden"
-						>
-							<div class="flex justify-between items-start">
-								<div>
-									<span
-										class="text-[10px] text-slate-500 uppercase tracking-widest font-extrabold"
-										>Placa do Veículo</span
-									>
-									<h4
-										class="text-xl font-black text-slate-900 uppercase tracking-wider mt-0.5"
-									>
-										{rep.licensePlate}
-									</h4>
-								</div>
-
-								<div class="flex flex-col items-end gap-1.5">
-									{#if rep.inspectionType}
-										<span
-											class="px-2 py-0.5 text-[9px] font-black uppercase rounded border {rep.inspectionType === 'Entrega' ? 'bg-slate-100 text-slate-800 border-slate-200 ' : 'bg-emerald-50 text-emerald-600 border-emerald-200 '}"
-										>
-											{rep.inspectionType === "Entrega"
-												? "🔑 Entrega"
-												: "🚗 Retirada"}
-										</span>
-									{/if}
-									<span
-										class="px-2.5 py-1 text-[10px] font-black uppercase rounded-lg bg-slate-50 border border-slate-200 text-amber-600"
-									>
-										{rep.damageCount ?? countDamages(rep.partStates)} Danos
-									</span>
-								</div>
-							</div>
-
-							<!-- Customer, inspector & date details -->
-							<div
-								class="my-5 space-y-2 text-xs border-t border-slate-100 pt-4"
-							>
-								<div class="flex justify-between">
-									<span class="text-slate-500">Cliente:</span>
-									<span class="font-semibold text-slate-700"
-										>{rep.clientName}</span
-									>
-								</div>
-								<div class="flex justify-between">
-									<span class="text-slate-500">Inspetor:</span>
-									<span class="text-slate-600"
-										>{rep.inspectorName || "N/A"}</span
-									>
-								</div>
-								<div class="flex justify-between">
-									<span class="text-slate-500">Data:</span>
-									<span class="text-slate-600"
-										>{(() => {
-											const d = new Date(rep.inspectionDateTime);
-											const dateStr = d.toLocaleDateString("pt-BR");
-											const timeStr = d.toLocaleTimeString("pt-BR", {
-												hour: "2-digit",
-												minute: "2-digit",
-											});
-											return `${dateStr} às ${timeStr}`;
-										})()}</span
-									>
-								</div>
-							</div>
-
-							<!-- Card Action -->
-							<button
-								onclick={() => goto("/dashboard/checklists/" + rep.id)}
-								class="w-full py-2.5 text-center text-xs font-bold text-white bg-primary hover:bg-primary-hover rounded-xl transition-all cursor-pointer shadow-sm hover:shadow"
-							>
-								Visualizar Laudo Completo
-							</button>
-
-							<!-- Ambient hover background gradient -->
-							<div
-								class="absolute inset-0 rounded-2xl bg-linear-to-tr from-neutral-500/2 to-transparent opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"
-							></div>
-						</div>
-					{/each}
-				</div>
-				{#if hasMore}
-					<div class="flex justify-center pt-5">
-						<button
-							onclick={() => loadChecklists({ append: true })}
-							disabled={loadingMore}
-							class="px-5 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-bold text-slate-700 disabled:opacity-50"
-						>
-							{loadingMore ? 'Carregando…' : 'Carregar mais'}
-						</button>
-					</div>
-				{/if}
-			{/if}
+<svelte:head><title>Histórico · Checklist Alug</title></svelte:head>
+<main class="page">
+	<div class="page-heading">
+		<div>
+			<div class="eyebrow">Registro de vistorias</div>
+			<h1>Histórico</h1>
+			<p>Encontre uma vistoria, consulte os detalhes e imprima o laudo.</p>
 		</div>
-	</main>
-
-	<!-- Footer -->
-	<footer
-		class="border-t border-slate-200 py-6 text-center text-xs text-slate-500 mt-12"
-	>
-		<p>© 2026 Checklist Alug. Sincronizado com o servidor Firestore.</p>
-	</footer>
-</div>
+	</div>
+	<div class="segmented" aria-label="Origem do histórico">
+		<button
+			aria-pressed={source === 'cloud'}
+			onclick={() => changeSource('cloud')}>Sincronizadas</button
+		><button
+			aria-pressed={source === 'local'}
+			onclick={() => changeSource('local')}>Neste dispositivo</button
+		>
+	</div>
+	<div class="toolbar section">
+		<div class="search">
+			<Icon name="search" size={18} /><input
+				type="search"
+				bind:value={search}
+				aria-label="Buscar no histórico carregado"
+				placeholder="Buscar por placa ou cliente"
+			/>
+		</div>
+		<select bind:value={type} aria-label="Tipo de vistoria"
+			><option value="All">Todos os tipos</option><option>Entrega</option
+			><option>Retirada</option></select
+		>
+	</div>
+	<Notice message={error} onretry={() => load()} />
+	{#if loading}<div
+			class="panel"
+			role="status"
+			aria-label="Carregando histórico"
+		>
+			{#each [1, 2, 3] as i}<div class="skeleton"></div>{/each}
+		</div>
+	{:else}
+		<div class="section-heading">
+			<span class="muted"
+				>{filtered.length}
+				{filtered.length === 1
+					? 'vistoria encontrada'
+					: 'vistorias encontradas'}{source === 'cloud'
+					? ` entre ${cloud.length} carregadas`
+					: ' neste dispositivo'}</span
+			>{#if search || type !== 'All'}<button
+					class="text-action"
+					onclick={() => {
+						search = '';
+						type = 'All';
+					}}>Limpar filtros</button
+				>{/if}
+		</div>
+		{#if filtered.length}<div class="panel inspection-list">
+				{#each filtered as record (record.id)}<InspectionRow
+						inspection={record}
+						href={source === 'cloud'
+							? `/dashboard/checklists/${encodeURIComponent(record.id)}`
+							: record.status === 'draft'
+								? `/dashboard/new?id=${encodeURIComponent(record.id)}`
+								: `/dashboard/new/${encodeURIComponent(record.id)}`}
+					/>{/each}
+			</div>
+		{:else if !error}<EmptyState
+				title={search || type !== 'All'
+					? 'Nenhuma vistoria encontrada'
+					: 'Seu histórico começa aqui'}
+				description={search || type !== 'All'
+					? 'Tente outra placa, cliente ou tipo de vistoria.'
+					: source === 'local'
+						? 'As vistorias salvas neste dispositivo aparecerão aqui.'
+						: 'As vistorias enviadas aparecerão aqui.'}
+			/>{/if}
+		{#if source === 'cloud' && hasMore && !offline}<div
+				class="inline section"
+				style="justify-content:center"
+			>
+				<button class="btn" disabled={loadingMore} onclick={() => load(true)}
+					>{loadingMore ? 'Carregando…' : 'Carregar mais vistorias'}</button
+				>
+			</div>{/if}
+	{/if}
+</main>

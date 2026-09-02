@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 
 	// Svelte 5 property bindings
-	let { signature = $bindable() } = $props();
+	let { signature = $bindable(), invalid = false } = $props();
 
 	let canvas;
 	let ctx;
@@ -23,7 +23,7 @@
 
 	function setupCanvas() {
 		if (!canvas) return;
-		
+
 		// Back up the current signature if any
 		const tempImage = signature;
 
@@ -34,7 +34,7 @@
 		canvas.height = Math.round(rect.height * ratio);
 		ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
 
-		ctx.strokeStyle = '#3b82f6'; // Premium blue line
+		ctx.strokeStyle = '#263d2e';
 		ctx.lineWidth = 3;
 		ctx.lineCap = 'round';
 		ctx.lineJoin = 'round';
@@ -64,7 +64,7 @@
 		const coords = getCoordinates(e);
 		lastX = coords.x;
 		lastY = coords.y;
-		
+
 		// Draw a point immediately
 		ctx.beginPath();
 		ctx.arc(lastX, lastY, ctx.lineWidth / 2, 0, Math.PI * 2);
@@ -102,8 +102,10 @@
 	}
 </script>
 
-<div class="flex flex-col gap-3 w-full">
-	<div class="relative w-full h-[180px] bg-slate-50 border border-slate-200 rounded-xl overflow-hidden focus-within:ring-2 focus-within:ring-blue-500">
+<div class="field">
+	<div
+		class="relative w-full h-[200px] bg-white border border-slate-300 rounded-lg overflow-hidden"
+	>
 		<canvas
 			bind:this={canvas}
 			onpointerdown={startDrawing}
@@ -111,30 +113,21 @@
 			onpointerup={stopDrawing}
 			onpointercancel={stopDrawing}
 			class="w-full h-full cursor-crosshair touch-none"
+			tabindex="0"
+			aria-label="Área para assinatura do cliente com dedo, caneta ou mouse"
+			aria-invalid={invalid}
 		></canvas>
-
-		{#if !signature}
-			<div class="absolute inset-0 flex items-center justify-center pointer-events-none text-sm text-slate-400 font-medium">
+		{#if !signature}<div
+				class="absolute inset-0 flex items-center justify-center pointer-events-none text-sm text-slate-500"
+			>
 				Assine aqui com o dedo ou mouse
-			</div>
-		{/if}
+			</div>{/if}
 	</div>
-
-	<div class="flex justify-between items-center">
-		<span class="text-xs text-slate-500">
-			{#if signature}
-				<span class="text-emerald-600 font-semibold">✓ Assinatura Capturada</span>
-			{:else}
-				Aguardando assinatura
-			{/if}
-		</span>
-		
-		<button
-			type="button"
-			onclick={clearCanvas}
-			class="px-3 py-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900  bg-slate-100 hover:bg-slate-200  border border-slate-200 rounded-lg transition-all cursor-pointer"
+	<div class="section-heading">
+		<span class="muted" role="status"
+			>{signature ? 'Assinatura registrada' : 'Aguardando assinatura'}</span
+		><button type="button" class="text-action" onclick={clearCanvas}
+			>Limpar assinatura</button
 		>
-			Limpar Assinatura
-		</button>
 	</div>
 </div>

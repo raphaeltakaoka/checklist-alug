@@ -1,3 +1,4 @@
+import { notify } from '$lib/ui.svelte.js';
 import { app } from '$lib/firebase.js';
 import { authenticatedFetch } from '$lib/api.js';
 
@@ -47,7 +48,7 @@ export async function enablePushNotifications(vapidKey) {
         const supported = await isPushSupported();
         if (!supported) {
             console.warn("Push notifications are not supported by this browser.");
-            alert("Notificações push não são suportadas neste navegador.");
+            notify("Notificações push não são suportadas neste navegador.");
             return null;
         }
 
@@ -55,7 +56,7 @@ export async function enablePushNotifications(vapidKey) {
         const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
         if (isIOS && !isInstalledPWA()) {
             console.warn("On iOS, the app must be installed to the Home Screen to enable notifications.");
-            alert("No iOS (iPhone/iPad), você deve adicionar este aplicativo à Tela de Início para habilitar as notificações. Clique no botão de compartilhar e selecione 'Adicionar à Tela de Início'.");
+            notify("No iOS (iPhone/iPad), você deve adicionar este aplicativo à Tela de Início para habilitar as notificações. Clique no botão de compartilhar e selecione 'Adicionar à Tela de Início'.");
             return null;
         }
 

@@ -1,388 +1,223 @@
 <script>
-	import { compressImage } from "$lib/utils/imageCompressor.js";
 	import { onDestroy } from 'svelte';
+	import { compressImage } from '$lib/utils/imageCompressor.js';
 	import { mediaPreviewUrl, revokeMediaPreview } from '$lib/mediaPreview.js';
-
-	// Svelte 5 property bindings
+	import { STATUS_LABELS } from '$lib/inspection.js';
+	import Icon from './Icon.svelte';
+	import Notice from './Notice.svelte';
+	import Dialog from './Dialog.svelte';
 	let {
 		partId = $bindable(),
 		partStates = $bindable(),
-		partName = "",
+		partName = ''
 	} = $props();
-
-	// Local states for the active part
-	let status = $state("none");
-	let comments = $state("");
+	let status = $state('none');
+	let comments = $state('');
 	let photos = $state([]);
-	let activePreviewIndex = $state(null);
-
-	// Validation derived state
-	let hasValidationWarning = $derived(status === "none" && (comments.trim() !== "" || photos.length > 0));
-
-	// Update local states when partId changes
+	let initial;
+	let dirty = $state(false);
+	let processing = $state(false);
+	let error = $state('');
+	let discard = $state(false);
+	let preview = $state(null);
+	let camera;
+	let gallery;
+	let alive = true;
+	let initialized = false;
+	let otherCount = $derived(
+		Object.entries(partStates).reduce(
+			(sum, [key, part]) =>
+				sum + (key === partId ? 0 : part.photos?.length || 0),
+			0
+		)
+	);
+	let remaining = $derived(
+		Math.max(0, Math.min(6 - photos.length, 24 - otherCount - photos.length))
+	);
+	let invalidNone = $derived(
+		status === 'none' && (!!comments.trim() || photos.length > 0)
+	);
 	$effect(() => {
-		if (partId && partStates) {
-			const state = partStates[partId] || {
-				status: "none",
-				comments: "",
-				photos: [],
+		if (!initialized && partId) {
+			initial = partStates[partId] || {
+				status: 'none',
+				comments: '',
+				photos: []
 			};
-			status = state.status || "none";
-			comments = state.comments || "";
-			photos = [...(state.photos || [])];
-			activePreviewIndex = null;
+			status = initial.status;
+			comments = initial.comments || '';
+			photos = [...(initial.photos || [])];
+			initialized = true;
 		}
 	});
-
-	// Close modal
 	function close() {
-		for (const photo of photos) revokeMediaPreview(photo);
-		activePreviewIndex = null;
+		if (processing) return;
+		if (dirty) discard = true;
+		else partId = null;
+	}
+	function save() {
+		if (processing || invalidNone) return;
+		partStates = {
+			...partStates,
+			[partId]: { status, comments, photos: [...photos] }
+		};
 		partId = null;
 	}
-
-	// Save changes back to partStates
-	function save() {
-		if (hasValidationWarning) return;
-		partStates[partId] = {
-			status,
-			comments,
-			photos,
-		};
-		close();
-	}
-
-	// Handle standard file upload with client-side image compression
-	async function handleFileUpload(e) {
-		const files = e.target.files;
-		if (!files) return;
-
-		for (let i = 0; i < files.length && photos.length < 6; i++) {
-			const file = files[i];
-			try {
-				const compressedBlob = await compressImage(file, {
-					maxWidth: 1280,
-					maxHeight: 1280,
-					quality: 0.82,
-				});
-				photos = [...photos, compressedBlob];
-			} catch (err) {
-				console.error('Falha ao comprimir imagem:', err);
-				alert(err?.message || 'Não foi possível preparar a imagem.');
+	async function upload(event) {
+		const files = Array.from(event.target.files || []);
+		if (!files.length || processing) return;
+		const capacity = remaining;
+		processing = true;
+		error = '';
+		if (files.length > capacity)
+			error = `Você pode adicionar mais ${capacity} ${capacity === 1 ? 'foto' : 'fotos'} nesta peça. Limite: 6 por peça e 24 por vistoria.`;
+		try {
+			for (const file of files.slice(0, capacity)) {
+				try {
+					const image = await compressImage(file, {
+						maxWidth: 1280,
+						maxHeight: 1280,
+						quality: 0.82
+					});
+					if (!alive) return;
+					photos = [...photos, image];
+					dirty = true;
+				} catch (cause) {
+					error =
+						cause?.message ||
+						'Não foi possível preparar a foto. Tente outra imagem.';
+				}
 			}
+		} finally {
+			processing = false;
+			event.target.value = '';
 		}
-		e.target.value = '';
 	}
-
-	// Delete a photo from the local state list
-	function deletePhoto(index) {
-		revokeMediaPreview(photos[index]);
-		photos = photos.filter((_, i) => i !== index);
-	}
-
 	onDestroy(() => {
+		alive = false;
 		for (const photo of photos) revokeMediaPreview(photo);
 	});
 </script>
 
-{#if partId}
-	<!-- Backdrop overlay -->
-	<div
-		class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-md transition-opacity duration-300"
-		onclick={close}
-		role="presentation"
-	>
-		<!-- Modal Content Card -->
-		<div
-			class="w-full max-w-2xl bg-white border border-slate-200 rounded-3xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh] transition-all scale-100"
-			onclick={(e) => e.stopPropagation()}
-			role="presentation"
-		>
-			<!-- Modal Header -->
-			<div
-				class="px-6 py-5 border-b border-slate-100 flex justify-between items-center bg-slate-50"
-			>
-				<div>
-					<span
-						class="text-xs font-bold text-blue-600 uppercase tracking-widest"
-						>Detalhes da Inspeção</span
-					>
-					<h2
-						class="text-xl font-bold text-slate-900 mt-0.5"
-					>
-						{partName}
-					</h2>
-				</div>
-				<button
-					type="button"
-					onclick={close}
-					class="p-2 hover:bg-slate-100  rounded-full text-slate-500 hover:text-slate-900  transition-colors cursor-pointer"
-					aria-label="Close"
-				>
-					<svg
-						xmlns="http://www.w3.org/2000/svg"
-						class="h-6 w-6"
-						fill="none"
-						viewBox="0 0 24 24"
-						stroke="currentColor"
-					>
-						<path
-							stroke-linecap="round"
-							stroke-linejoin="round"
-							stroke-width="2"
-							d="M6 18L18 6M6 6l12 12"
-						/>
-					</svg>
-				</button>
-			</div>
-
-			<!-- Scrollable Content Body -->
-			<div class="flex-1 overflow-y-auto p-6 space-y-6">
-				<!-- Damage Status Select -->
-				<div>
-					<label
-						class="block text-sm font-semibold text-slate-700 mb-3"
-						for="damage-status"
-					>
-						Status do Dano
-					</label>
-					<div
-						class="flex flex-wrap gap-2 sm:grid sm:grid-cols-6"
-						id="damage-status"
-					>
-						{#each [{ val: "none", label: "Sem Danos", color: "border-emerald-500 text-emerald-600 hover:bg-emerald-50  ", active: "bg-emerald-50  border-emerald-500 text-emerald-800 " }, { val: "scratch", label: "Risco", color: "border-amber-500 text-amber-600 hover:bg-amber-50  ", active: "bg-amber-50  border-amber-500 text-amber-800 " }, { val: "dent", label: "Amassado", color: "border-orange-500 text-orange-600 hover:bg-orange-50  ", active: "bg-orange-50  border-orange-500 text-orange-800 " }, { val: "crack", label: "Trincado", color: "border-purple-500 text-purple-600 hover:bg-purple-50  ", active: "bg-purple-50  border-purple-500 text-purple-800 " }, { val: "broken", label: "Quebrado", color: "border-red-500 text-red-600 hover:bg-red-50  ", active: "bg-red-50  border-red-500 text-red-800 " }, { val: "damaged", label: "Danificado", color: "border-indigo-500 text-indigo-600 hover:bg-indigo-50  ", active: "bg-indigo-50  border-indigo-500 text-indigo-800 " }] as option (option.val)}
-							<button
-								type="button"
-								onclick={() => (status = option.val)}
-								class="grow sm:grow-0 px-3 py-2.5 rounded-xl border text-sm font-bold transition-all text-center cursor-pointer min-w-[100px] {status === option.val ? option.active : 'border-slate-200 bg-slate-50 text-slate-500 ' + option.color}"
-							>
-								{option.label}
-							</button>
-						{/each}
-					</div>
-				</div>
-
-				<!-- Photos Section -->
-				<div>
-					<div class="flex justify-between items-center mb-3">
-						<label
-							for="photos"
-							class="block text-sm font-semibold text-slate-700"
-						>
-							Fotos ({photos.length})
-						</label>
-					</div>
-
-					<!-- Thumbnails Container -->
-					<div class="grid grid-cols-3 sm:grid-cols-4 gap-3">
-						<!-- Usar Câmera Card -->
-						<label
-							class="border-2 border-dashed border-slate-200 hover:border-blue-500/65 bg-slate-50 hover:bg-slate-100 rounded-2xl aspect-square flex flex-col items-center justify-center cursor-pointer transition-all gap-1.5 text-center px-2"
-						>
-							<svg
-								xmlns="http://www.w3.org/2000/svg"
-								class="h-6 w-6 text-slate-400"
-								fill="none"
-								viewBox="0 0 24 24"
-								stroke="currentColor"
-							>
-								<path
-									stroke-linecap="round"
-									stroke-linejoin="round"
-									stroke-width="1.5"
-									d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"
-								/>
-								<path
-									stroke-linecap="round"
-									stroke-linejoin="round"
-									stroke-width="1.5"
-									d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"
-								/>
-							</svg>
-							<span
-								class="text-xs font-semibold text-slate-500"
-								>Tirar Foto</span
-							>
-							<input
-								type="file"
-								accept="image/*"
-								capture="environment"
-								class="hidden"
-								onchange={handleFileUpload}
-							/>
-						</label>
-
-						<!-- Escolher da Galeria Card -->
-						<label
-							class="border-2 border-dashed border-slate-200 hover:border-blue-500/65 bg-slate-50 hover:bg-slate-100 rounded-2xl aspect-square flex flex-col items-center justify-center cursor-pointer transition-all gap-1.5 text-center px-2"
-						>
-							<svg
-								xmlns="http://www.w3.org/2000/svg"
-								class="h-6 w-6 text-slate-400"
-								fill="none"
-								viewBox="0 0 24 24"
-								stroke="currentColor"
-							>
-								<path
-									stroke-linecap="round"
-									stroke-linejoin="round"
-									stroke-width="1.5"
-									d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
-								/>
-							</svg>
-							<span
-								class="text-xs font-semibold text-slate-500"
-								>Galeria</span
-							>
-							<input
-								type="file"
-								accept="image/*"
-								multiple
-								class="hidden"
-								onchange={handleFileUpload}
-							/>
-						</label>
-
-						{#each photos as photo, i (photo)}
-							<div
-								role="button"
-								tabindex="0"
-								onclick={() => (activePreviewIndex = i)}
-								onkeydown={(e) => {
-									if (e.key === "Enter" || e.key === " ") {
-										e.preventDefault();
-										activePreviewIndex = i;
-									}
-								}}
-								class="relative aspect-square bg-slate-100 border border-slate-200 rounded-2xl overflow-hidden group cursor-pointer text-left focus:outline-none focus:ring-2 focus:ring-blue-500"
-							>
-								<img
-									src={mediaPreviewUrl(photo)}
-									alt="Car Part state {i}"
-									loading="lazy"
-									class="w-full h-full object-cover"
-								/>
-
-								<!-- Delete Overlay -->
-								<button
-									type="button"
-									onclick={(e) => {
-										e.stopPropagation();
-										deletePhoto(i);
-									}}
-									class="absolute top-1.5 right-1.5 p-1 bg-red-600/80 hover:bg-red-600 text-white rounded-lg opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer duration-150"
-									title="Excluir foto"
-								>
-									<svg
-										xmlns="http://www.w3.org/2000/svg"
-										class="h-4 w-4"
-										fill="none"
-										viewBox="0 0 24 24"
-										stroke="currentColor"
-									>
-										<path
-											stroke-linecap="round"
-											stroke-linejoin="round"
-											stroke-width="2"
-											d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-										/>
-									</svg>
-								</button>
-							</div>
-						{/each}
-					</div>
-				</div>
-
-				<!-- Lightbox Preview Overlay -->
-				{#if activePreviewIndex !== null && photos[activePreviewIndex]}
-					<div
-						class="fixed inset-0 z-50 flex flex-col items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md transition-opacity duration-300"
-						onclick={() => (activePreviewIndex = null)}
-						role="presentation"
-					>
-						<div
-							class="relative max-w-2xl w-full flex flex-col items-center gap-6"
-							onclick={(e) => e.stopPropagation()}
-							role="presentation"
-						>
-							<img
-								src={mediaPreviewUrl(photos[activePreviewIndex])}
-								alt="Large Preview"
-								class="max-h-[70vh] max-w-full object-contain rounded-2xl border border-slate-800 shadow-2xl"
-							/>
-
-							<div class="flex gap-4">
-								<button
-									type="button"
-									onclick={() => {
-										deletePhoto(activePreviewIndex);
-										activePreviewIndex = null;
-									}}
-									class="px-6 py-3 bg-red-600 hover:bg-red-500 text-white font-extrabold rounded-xl transition-all shadow-lg shadow-red-600/20 hover:shadow-red-600/30 cursor-pointer text-sm"
-								>
-									Excluir Foto
-								</button>
-								<button
-									type="button"
-									onclick={() => (activePreviewIndex = null)}
-									class="px-6 py-3 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-xl transition-all cursor-pointer text-sm border border-slate-700"
-								>
-									Fechar
-								</button>
-							</div>
-						</div>
-					</div>
-				{/if}
-
-				<!-- Comments Notes Section -->
-				<div>
-					<label
-						class="block text-sm font-semibold text-slate-700 mb-2"
-						for="inspection-comments"
-					>
-						Comentários / Observações do Inspetor
-					</label>
-					<textarea
-						id="inspection-comments"
-						bind:value={comments}
-						placeholder="Descreva o dano"
-						class="w-full h-28 bg-slate-50 border border-slate-200 focus:border-blue-500  rounded-2xl p-4 text-slate-900 placeholder-slate-400 focus:ring-1 focus:ring-blue-500 outline-none resize-none transition-all text-sm"
-					></textarea>
-				</div>
-
-				{#if hasValidationWarning}
-					<div class="p-4 bg-rose-50 border border-rose-200 rounded-2xl flex items-start gap-3 animate-fade-in shadow-sm">
-						<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-rose-500 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-						</svg>
-						<div class="text-sm text-rose-800 leading-relaxed font-semibold">
-							Atenção: Selecione um status de dano diferente de "Sem Danos" ao adicionar fotos ou comentários.
-						</div>
-					</div>
-				{/if}
-			</div>
-
-			<!-- Modal Footer -->
-			<div
-				class="px-6 py-4 border-t border-slate-100 bg-slate-50 flex justify-between items-center"
-			>
-				<button
-					type="button"
-					onclick={close}
-					class="px-5 py-2.5 bg-slate-100 hover:bg-slate-200  text-slate-600 font-bold rounded-xl transition-all cursor-pointer text-sm border border-slate-200"
-				>
-					Cancelar
-				</button>
-
-				<button
-					type="button"
-					onclick={save}
-					disabled={hasValidationWarning}
-					class="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none disabled:cursor-not-allowed text-white font-bold rounded-xl transition-all shadow-lg shadow-blue-500/20 hover:shadow-blue-500/30 cursor-pointer text-sm"
-				>
-					Salvar Alterações
-				</button>
+<Dialog title={partName} onclose={close} busy={processing}>
+	<div class="stack">
+		<Notice message={error} />
+		<div class="field">
+			<span class="field-label" id="damage-label">Condição da peça</span>
+			<div class="choice-grid" aria-labelledby="damage-label">
+				{#each Object.entries(STATUS_LABELS) as [value, label]}<button
+						type="button"
+						disabled={processing}
+						aria-pressed={status === value}
+						onclick={() => {
+							status = value;
+							dirty = true;
+						}}>{label}</button
+					>{/each}
 			</div>
 		</div>
+		<div class="field">
+			<label for="damage-comments"
+				>Observações <span class="muted">· opcional</span></label
+			><textarea
+				id="damage-comments"
+				bind:value={comments}
+				oninput={() => (dirty = true)}
+				disabled={processing}
+				maxlength="1000"
+				rows="3"
+				placeholder="Descreva o dano e a localização"></textarea><span
+				class="muted">{comments.length}/1.000 caracteres</span
+			>
+		</div>
+		<div class="field">
+			<span class="field-label">Fotos · {photos.length}/6</span>
+			{#if photos.length}<div class="photo-grid">
+					{#each photos as photo, index}<div class="photo-tile">
+							<button
+								aria-label={`Ampliar foto ${index + 1}`}
+								onclick={() => (preview = photo)}
+								><img
+									src={mediaPreviewUrl(photo)}
+									alt={`Foto ${index + 1} de ${partName}`}
+								/></button
+							><button
+								class="icon-button"
+								disabled={processing}
+								aria-label={`Remover foto ${index + 1}`}
+								onclick={() => {
+									revokeMediaPreview(photo);
+									photos = photos.filter((_, i) => i !== index);
+									dirty = true;
+								}}><Icon name="trash" size={17} /></button
+							>
+						</div>{/each}
+				</div>{/if}
+			<div class="upload-controls">
+				<button
+					class="btn"
+					disabled={processing || !remaining}
+					onclick={() => camera.click()}
+					><Icon name="camera" />{processing
+						? 'Preparando…'
+						: 'Tirar foto'}</button
+				><button
+					class="btn"
+					disabled={processing || !remaining}
+					onclick={() => gallery.click()}><Icon name="image" />Galeria</button
+				>
+			</div>
+			<input
+				class="sr-only"
+				tabindex="-1"
+				bind:this={camera}
+				type="file"
+				accept="image/*"
+				capture="environment"
+				onchange={upload}
+				aria-label="Fotografar dano"
+			/><input
+				class="sr-only"
+				tabindex="-1"
+				bind:this={gallery}
+				type="file"
+				multiple
+				accept="image/*"
+				onchange={upload}
+				aria-label="Escolher fotos do dano"
+			/>
+			<p class="field-help">
+				{otherCount + photos.length}/24 fotos na vistoria.{remaining === 0
+					? ' Limite de fotos atingido.'
+					: ''}
+			</p>
+		</div>
+		{#if invalidNone}<Notice
+				message="Selecione o tipo de dano para salvar fotos ou observações."
+			/>{/if}
 	</div>
-{/if}
+	{#snippet footer()}<button class="btn" disabled={processing} onclick={close}
+			>Cancelar</button
+		><button
+			class="btn primary"
+			disabled={processing || invalidNone}
+			onclick={save}><Icon name="check" size={17} />Salvar peça</button
+		>{/snippet}
+</Dialog>
+{#if discard}<Dialog
+		title="Descartar alterações da peça?"
+		onclose={() => (discard = false)}
+		><p>As alterações desta peça ainda não foram salvas.</p>
+		{#snippet footer()}<button class="btn" onclick={() => (discard = false)}
+				>Continuar editando</button
+			><button class="btn danger" onclick={() => (partId = null)}
+				>Descartar</button
+			>{/snippet}</Dialog
+	>{/if}
+{#if preview}<Dialog title="Foto do dano" wide onclose={() => (preview = null)}
+		><img
+			class="preview-image"
+			src={mediaPreviewUrl(preview)}
+			alt={`Detalhe de ${partName}`}
+		/></Dialog
+	>{/if}

@@ -14,7 +14,8 @@ The public Firebase and VAPID values use SvelteKit's `PUBLIC_*` convention becau
 ## Verification
 
 - `npm run check` validates Svelte and JavaScript usage.
-- `npm run test:unit` runs local database, schema, media, and serialization tests.
+- `npm run test:unit` runs local database, schema, media, serialization, and inspection form tests.
+- `npm run test:ui` exercises the UI against a running local dev server with synthetic data and mocked Firebase. See [UI refresh and screenshots](docs/UI_REFRESH.md) for setup and coverage.
 - `npm run test:rules` runs the authoritative Firebase emulator suite from the sibling `crm-alug` checkout. Set `CRM_ALUG_PATH` when it is elsewhere.
 - `npm test` runs unit tests, checks, and the production build.
 - `npm run verify` adds the shared rules tests and production dependency audit.

@@ -1,601 +1,240 @@
 <script>
-	import { onMount, onDestroy } from "svelte";
-	import { goto } from "$app/navigation";
-	import {
-		getAllInspections,
-		deleteInspection as deleteFromDB,
-	} from "$lib/db.js";
-	import Navbar from "$lib/components/Navbar.svelte";
-	import { authState } from '$lib/auth.svelte.js';
+	import { onMount } from 'svelte';
+	import { page } from '$app/state';
+	import { getAllInspections, deleteInspection } from '$lib/db.js';
 	import { authenticatedFetch } from '$lib/api.js';
-	import { countDamages } from '$lib/inspection.js';
-
-	// App state management
+	import { authState } from '$lib/auth.svelte.js';
+	import { ui, notify } from '$lib/ui.svelte.js';
+	import Icon from '$lib/components/Icon.svelte';
+	import Notice from '$lib/components/Notice.svelte';
+	import Dialog from '$lib/components/Dialog.svelte';
+	import EmptyState from '$lib/components/EmptyState.svelte';
+	import InspectionRow from '$lib/components/InspectionRow.svelte';
 	let inspections = $state([]);
-	let inspectorName = $state("Inspetor");
-
-	// Search query for dashboard
-	let searchPlate = $state("");
-
-	// Sync and offline states
-	let activeSyncIds = $state(new Set());
-	let isOffline = $state(false);
-
-	let eventCleanup = () => {};
-
-	onMount(async () => {
-		const ownerUid = authState.user?.uid;
-		if (!ownerUid) return;
-		try {
-			inspections = await getAllInspections(ownerUid);
-		} catch (e) {
-			console.error("Failed to load inspections from IndexedDB", e);
-		}
-
-		// Retrieve inspector name from localStorage
-		inspectorName = authState.displayName || "Inspetor";
-
-		// Force light theme
-		document.documentElement.classList.remove("dark");
-
-		// Sync status initialization
-		isOffline = !navigator.onLine;
-
-		// Listen to network changes
-		const handleOnline = () => {
-			isOffline = false;
-			triggerPendingSyncs();
-		};
-		const handleOffline = () => {
-			isOffline = true;
-		};
-
-		window.addEventListener("online", handleOnline);
-		window.addEventListener("offline", handleOffline);
-
-		eventCleanup = () => {
-			window.removeEventListener("online", handleOnline);
-			window.removeEventListener("offline", handleOffline);
-		};
-
-		// Trigger sync immediately on mount for any pending local items
-		triggerPendingSyncs();
-	});
-
-	onDestroy(() => {
-		eventCleanup();
-	});
-
-	async function triggerPendingSyncs() {
-		const ownerUid = authState.user?.uid;
-		if (isOffline || !ownerUid) return;
-
-		// Find completed checklists that haven't been synced yet
-		const pending = inspections.filter(
-			(i) => i.status === "completed" && !i.synced,
-		);
-		if (pending.length === 0) return;
-		const { syncInspectionToCloud } = await import('$lib/sync.js');
-
-		for (const ins of pending) {
-			if (activeSyncIds.has(ins.id)) continue;
-
-			// Add to active syncs
-			activeSyncIds.add(ins.id);
-			activeSyncIds = new Set(activeSyncIds); // trigger reactivity in Svelte 5
-
-			try {
-				await syncInspectionToCloud(ins);
-				// Refresh local list to pick up updated "synced: true" and lightweight urls
-				inspections = await getAllInspections(ownerUid);
-			} catch (e) {
-				console.error(
-					`Failed to sync inspection ${ins.id} to cloud:`,
-					e,
-				);
-			} finally {
-				activeSyncIds.delete(ins.id);
-				activeSyncIds = new Set(activeSyncIds); // trigger reactivity in Svelte 5
-			}
-		}
-	}
-
-	function startNewInspection() {
-		goto("/dashboard/new");
-	}
-
-	// Custom delete confirmation modal state
-	let showDeleteModal = $state(false);
-	let inspectionIdToDelete = $state(null);
-	let isDeleting = $state(false);
-
-	function triggerDelete(id) {
-		inspectionIdToDelete = id;
-		showDeleteModal = true;
-	}
-
-	function cancelDelete() {
-		showDeleteModal = false;
-		inspectionIdToDelete = null;
-	}
-
-	async function deleteInspection() {
-		const ownerUid = authState.user?.uid;
-		if (!inspectionIdToDelete || !ownerUid) return;
-		isDeleting = true;
-
-		// Check if it was synced
-		const toDelete = inspections.find((i) => i.id === inspectionIdToDelete);
-		const wasSynced = toDelete?.synced;
-
-		try {
-			if (wasSynced) {
-				await authenticatedFetch(`/api/checklists/${encodeURIComponent(inspectionIdToDelete)}`, {
-					method: 'DELETE'
-				});
-			}
-			await deleteFromDB(ownerUid, inspectionIdToDelete);
-			inspections = inspections.filter((i) => i.id !== inspectionIdToDelete);
-		} catch (e) {
-			console.error("Failed to delete inspection:", e);
-			alert("Falha ao excluir o registro de inspeção.");
-		} finally {
-			isDeleting = false;
-			showDeleteModal = false;
-			inspectionIdToDelete = null;
-		}
-	}
-
-	// Filter inspections by license plate or client name search
-	const filteredInspections = $derived(
-		inspections.filter(
-			(i) =>
-				(i.licensePlate || '')
-					.toLowerCase()
-					.includes(searchPlate.toLowerCase()) ||
-				(i.clientName || '').toLowerCase().includes(searchPlate.toLowerCase()),
-		),
+	let loading = $state(true);
+	let error = $state('');
+	let search = $state('');
+	let offline = $state(false);
+	let syncing = $derived(ui.syncingIds);
+	let deleting = $state(null);
+	let deleteBusy = $state(false);
+	let deleteError = $state('');
+	let mounted = true;
+	const matches = (record) =>
+		`${record.licensePlate} ${record.clientName}`
+			.toLocaleLowerCase()
+			.includes(search.trim().toLocaleLowerCase());
+	let drafts = $derived(
+		inspections.filter((record) => record.status === 'draft' && matches(record))
 	);
-
+	let pending = $derived(
+		inspections.filter(
+			(record) =>
+				record.status === 'completed' && !record.synced && matches(record)
+		)
+	);
+	let allPending = $derived(
+		inspections.filter(
+			(record) => record.status === 'completed' && !record.synced
+		)
+	);
+	async function load() {
+		error = '';
+		try {
+			inspections = await getAllInspections(authState.user.uid);
+		} catch {
+			error = 'Não foi possível abrir suas vistorias neste dispositivo.';
+		} finally {
+			loading = false;
+		}
+	}
+	async function sync(record) {
+		if (offline || syncing.has(record.id)) return;
+		ui.syncingIds = new Set([...syncing, record.id]);
+		try {
+			const { syncInspectionToCloud } = await import('$lib/sync.js');
+			await syncInspectionToCloud(record);
+		} catch {
+			/* The persisted sync state is displayed in the row. */
+		} finally {
+			if (mounted) await load();
+			ui.syncingIds = new Set(
+				[...ui.syncingIds].filter((id) => id !== record.id)
+			);
+		}
+	}
+	async function syncPending() {
+		for (const record of allPending) {
+			if (!mounted) break;
+			await sync(record);
+		}
+	}
+	onMount(() => {
+		mounted = true;
+		offline = !navigator.onLine;
+		load().then(syncPending);
+		const online = () => {
+			offline = false;
+			syncPending();
+		};
+		const disconnected = () => (offline = true);
+		window.addEventListener('online', online);
+		window.addEventListener('offline', disconnected);
+		return () => {
+			mounted = false;
+			window.removeEventListener('online', online);
+			window.removeEventListener('offline', disconnected);
+		};
+	});
+	async function remove() {
+		if (!deleting || deleteBusy) return;
+		deleteBusy = true;
+		deleteError = '';
+		try {
+			if (deleting.synced)
+				await authenticatedFetch(
+					`/api/checklists/${encodeURIComponent(deleting.id)}`,
+					{ method: 'DELETE' }
+				);
+			await deleteInspection(authState.user.uid, deleting.id);
+			inspections = inspections.filter((record) => record.id !== deleting.id);
+			deleting = null;
+			notify('Vistoria excluída.', 'success');
+		} catch {
+			deleteError = 'Não foi possível excluir. Tente novamente.';
+		} finally {
+			deleteBusy = false;
+		}
+	}
 </script>
 
-<svelte:head>
-	<title>Checklist Alug</title>
-	<meta
-		name="description"
-		content="Checklist Alug - Suíte premium de inspeção de carros e mapeamento de danos com captura de assinaturas."
-	/>
-</svelte:head>
-
-<div
-	class="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans select-none"
->
-	<!-- Top Premium Navbar -->
-	<Navbar />
-
-	<!-- Main Body Wrapper -->
-	<main class="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6">
-		<!-- DASHBOARD VIEW -->
-		<div class="space-y-6">
-			<!-- Hero Summary Dashboard -->
-			<div
-				class="bg-white border border-slate-200 shadow-md rounded-3xl p-6 sm:p-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-6"
-			>
-				<div>
-					<h2
-						class="text-2xl sm:text-3xl font-black text-slate-900 leading-tight"
-					>
-						Bem-vindo, {inspectorName}
-					</h2>
-					<div class="flex items-center gap-2.5 mt-2">
-						{#if isOffline}
-							<div
-								class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/10 text-amber-600 border border-amber-500/25 text-xs font-bold animate-pulse"
-							>
-								<span
-									class="w-1.5 h-1.5 rounded-full bg-amber-500"
-								></span>
-								<span>Modo Offline (Aguardando Internet)</span>
-							</div>
-						{:else if activeSyncIds.size > 0}
-							<div
-								class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-500/10 text-slate-600 border border-slate-500/25 text-xs font-bold"
-							>
-								<svg
-									class="animate-spin h-3.5 w-3.5 text-slate-600"
-									xmlns="http://www.w3.org/2000/svg"
-									fill="none"
-									viewBox="0 0 24 24"
-								>
-									<circle
-										class="opacity-25"
-										cx="12"
-										cy="12"
-										r="10"
-										stroke="currentColor"
-										stroke-width="4"
-									></circle>
-									<path
-										class="opacity-75"
-										fill="currentColor"
-										d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-									></path>
-								</svg>
-								<span
-									>Sincronizando {activeSyncIds.size}
-									{activeSyncIds.size === 1
-										? "relatório"
-										: "relatórios"}...</span
-								>
-							</div>
-						{:else if inspections.some((i) => i.status === "completed" && !i.synced)}
-							<div
-								class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-500/10 text-slate-600 border border-slate-500/25 text-xs font-bold"
-							>
-								<span
-									class="w-1.5 h-1.5 rounded-full bg-slate-400"
-								></span>
-								<span
-									>{inspections.filter(
-										(i) =>
-											i.status === "completed" &&
-											!i.synced,
-									).length} na fila de envio</span
-								>
-							</div>
-						{:else}
-							<div
-								class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-600 border border-emerald-500/25 text-xs font-bold"
-							>
-								<span
-									class="w-1.5 h-1.5 rounded-full bg-emerald-500"
-								></span>
-								<span>Nuvem Sincronizada</span>
-							</div>
-						{/if}
-					</div>
-				</div>
-
-				<button
-					onclick={startNewInspection}
-					class="w-full md:w-auto px-6 py-3.5 bg-primary hover:bg-primary-hover text-white font-extrabold rounded-2xl transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-2 cursor-pointer text-sm"
-				>
-					<svg
-						xmlns="http://www.w3.org/2000/svg"
-						class="h-5 w-5"
-						fill="none"
-						viewBox="0 0 24 24"
-						stroke="currentColor"
-					>
-						<path
-							stroke-linecap="round"
-							stroke-linejoin="round"
-							stroke-width="2.5"
-							d="M12 4v16m8-8H4"
-						/>
-					</svg>
-					Iniciar Nova Inspeção
-				</button>
-			</div>
-
-			<!-- Search & Inspections List -->
-			<div class="space-y-4">
-				<div
-					class="flex flex-col sm:flex-row gap-4 items-center justify-between"
-				>
-					<div>
-						<h3
-							class="text-lg font-bold text-slate-800"
-						>
-							Relatórios Anteriores
-						</h3>
-						<p class="text-xs text-slate-500">
-							Salvo localmente neste dispositivo.
-						</p>
-					</div>
-
-					<!-- Search bar -->
-					<div class="w-full sm:max-w-xs relative">
-						<input
-							type="text"
-							bind:value={searchPlate}
-							placeholder="Buscar por placa ou cliente..."
-							class="w-full bg-white border border-slate-200 focus:border-primary rounded-xl pl-10 pr-4 py-2.5 text-slate-800 outline-none transition-all placeholder:text-slate-400 text-sm"
-						/>
-						<svg
-							xmlns="http://www.w3.org/2000/svg"
-							class="h-4.5 w-4.5 text-slate-400 absolute left-3 top-3.5"
-							fill="none"
-							viewBox="0 0 24 24"
-							stroke="currentColor"
-						>
-							<path
-								stroke-linecap="round"
-								stroke-linejoin="round"
-								stroke-width="2"
-								d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-							/>
-						</svg>
-					</div>
-				</div>
-
-				{#if filteredInspections.length === 0}
-					<!-- Empty dashboard state -->
-					<div
-						class="p-12 border border-dashed border-slate-300 bg-white rounded-3xl text-center space-y-4"
-					>
-						<div
-							class="w-12 h-12 bg-slate-100 rounded-2xl flex items-center justify-center mx-auto text-slate-400"
-						>
-							📄
-						</div>
-						<div class="space-y-1">
-							<h4
-								class="text-base font-bold text-slate-800"
-							>
-								Nenhuma inspeção encontrada
-							</h4>
-							<p class="text-xs text-slate-500 max-w-xs mx-auto">
-								{searchPlate
-									? "Nenhum resultado corresponde ao filtro de busca."
-									: "Clique em 'Iniciar Nova Inspeção' para registrar seu primeiro relatório de vistoria."}
-							</p>
-						</div>
-					</div>
-				{:else}
-					<!-- Inspections list grid -->
-					<div
-						class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
-					>
-						{#each filteredInspections as rep (rep.id)}
-							<div
-								class="bg-white hover:bg-slate-50/50  border border-slate-200 hover:border-slate-300  shadow-sm hover:shadow-md rounded-2xl p-5 transition-all flex flex-col justify-between group relative overflow-hidden"
-							>
-								<!-- License plate display -->
-								<div class="flex justify-between items-start">
-									<div>
-										<span
-											class="text-[10px] text-slate-500 uppercase tracking-widest font-extrabold"
-											>Placa do Veículo</span
-										>
-										<h4
-											class="text-xl font-black text-slate-900 uppercase tracking-wider mt-0.5"
-										>
-											{rep.licensePlate}
-										</h4>
-									</div>
-
-									<!-- Visual badges showing type and damages -->
-									<div
-										class="flex flex-col items-end gap-1.5"
-									>
-										{#if rep.status === "draft"}
-											<span
-												class="px-2 py-0.5 text-[9px] font-black uppercase rounded border bg-amber-50 text-amber-600 border-amber-200"
-											>
-												📝 Rascunho
-											</span>
-										{:else}
-											<span
-												class="px-2 py-0.5 text-[9px] font-black uppercase rounded border bg-emerald-50 text-emerald-600 border-emerald-200"
-											>
-												✅ Concluído
-											</span>
-
-											<!-- Cloud Sync status badge -->
-											{#if rep.synced}
-												<span
-													class="px-2 py-0.5 text-[9px] uppercase rounded border bg-slate-50 text-slate-700 border-slate-200 flex items-center gap-1 font-extrabold"
-												>
-													☁️ Sincronizado
-												</span>
-											{:else if activeSyncIds.has(rep.id)}
-												<span
-													class="px-2 py-0.5 text-[9px] uppercase rounded border bg-slate-500/10 text-slate-600 border-slate-500/20 flex items-center gap-1 animate-pulse font-extrabold"
-												>
-													<svg
-														class="animate-spin h-2 w-2 text-slate-600"
-														xmlns="http://www.w3.org/2000/svg"
-														fill="none"
-														viewBox="0 0 24 24"
-													>
-														<circle
-															class="opacity-25"
-															cx="12"
-															cy="12"
-															r="10"
-															stroke="currentColor"
-															stroke-width="4"
-														></circle>
-														<path
-															class="opacity-75"
-															fill="currentColor"
-															d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-														></path>
-													</svg>
-													Enviando...
-												</span>
-											{:else if isOffline}
-												<span
-													class="px-2 py-0.5 text-[9px] uppercase rounded border bg-amber-500/10 text-amber-600 border-amber-500/20 flex items-center gap-1 font-extrabold"
-												>
-													🕒 Fila (Offline)
-												</span>
-											{:else}
-												<span
-													class="px-2 py-0.5 text-[9px] font-black uppercase rounded border bg-slate-100 text-slate-500 border-slate-200 flex items-center gap-1"
-												>
-													🕒 Na Fila
-												</span>
-											{/if}
-										{/if}
-										{#if rep.inspectionType}
-											<span
-												class="px-2 py-0.5 text-[9px] font-black uppercase rounded border {rep.inspectionType === 'Entrega' ? 'bg-slate-100 text-slate-800 border-slate-200 ' : 'bg-emerald-50 text-emerald-600 border-emerald-200 '}"
-											>
-												{rep.inspectionType ===
-												"Entrega"
-													? "🔑 Entrega"
-													: "🚗 Retirada"}
-											</span>
-										{/if}
-										<span
-											class="px-2.5 py-1 text-[10px] font-black uppercase rounded-lg bg-slate-50 border border-slate-200 text-amber-600"
-										>
-											{countDamages(rep.partStates)} Danos
-										</span>
-									</div>
-								</div>
-
-								<!-- Client and date details -->
-								<div
-									class="my-5 space-y-2 text-xs border-t border-slate-100 pt-4"
-								>
-									<div class="flex justify-between">
-										<span
-											class="text-slate-500"
-											>Cliente:</span
-										>
-										<span
-											class="font-semibold text-slate-700"
-											>{rep.clientName}</span
-										>
-									</div>
-									<div class="flex justify-between">
-										<span
-											class="text-slate-500"
-											>Inspetor:</span
-										>
-										<span
-											class="text-slate-600"
-											>{rep.inspectorName || "N/A"}</span
-										>
-									</div>
-									<div class="flex justify-between">
-										<span
-											class="text-slate-500"
-											>Data:</span
-										>
-										<span
-											class="text-slate-600"
-											>{(() => {
-												const d = new Date(
-													rep.inspectionDateTime,
-												);
-												const dateStr =
-													d.toLocaleDateString(
-														"pt-BR",
-													);
-												const timeStr =
-													d.toLocaleTimeString(
-														"pt-BR",
-														{
-															hour: "2-digit",
-															minute: "2-digit",
-														},
-													);
-												return `${dateStr} às ${timeStr}`;
-											})()}</span
-										>
-									</div>
-								</div>
-
-								<!-- Actions -->
-								<div class="flex gap-2">
-									{#if rep.status === "draft"}
-										<button
-											onclick={() =>
-												goto(
-													"/dashboard/new?id=" +
-														rep.id,
-												)}
-											class="flex-1 py-2 text-center text-xs font-black text-white bg-amber-600 hover:bg-amber-500 rounded-xl transition-all cursor-pointer shadow-md shadow-amber-600/10 hover:shadow-amber-600/20"
-										>
-											Continuar Inspeção
-										</button>
-									{:else}
-										<button
-											onclick={() =>
-												goto(
-													"/dashboard/new/" + rep.id,
-												)}
-											class="flex-1 py-2 text-center text-xs font-bold text-white bg-primary hover:bg-primary-hover rounded-xl transition-all cursor-pointer shadow-sm hover:shadow"
-										>
-											Ver / Imprimir Detalhes
-										</button>
-									{/if}
-									<button
-										onclick={(e) => {
-											e.preventDefault();
-											e.stopPropagation();
-											triggerDelete(rep.id);
-										}}
-										class="px-3 py-2 bg-slate-50 hover:bg-red-50  text-slate-500 hover:text-red-600  border border-slate-200 rounded-xl transition-all cursor-pointer text-xs"
-										title="Excluir inspeção"
-									>
-										✕
-									</button>
-								</div>
-
-								<!-- Ambient hover background gradient -->
-								<div
-									class="absolute inset-0 rounded-2xl bg-linear-to-tr from-neutral-500/2 to-transparent opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"
-								></div>
-							</div>
-						{/each}
-					</div>
-				{/if}
-			</div>
+<svelte:head><title>Início · Checklist Alug</title></svelte:head>
+<main class="page">
+	<div class="page-heading">
+		<div>
+			<div class="eyebrow">Seu espaço de trabalho</div>
+			<h1>Olá, {authState.displayName.split(' ')[0]}.</h1>
+			<p>Uma nova vistoria. Tudo em ordem.</p>
 		</div>
-	</main>
-
-	<!-- Footer -->
-	<footer
-		class="border-t border-slate-200 py-6 text-center text-xs text-slate-500 mt-12 print:hidden"
-	>
-		<p>© 2026 Checklist Alug. Executando localmente no navegador.</p>
-	</footer>
-</div>
-
-{#if showDeleteModal}
-	<div
-		class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/40 backdrop-blur-md transition-all duration-300"
-	>
-		<div
-			class="w-full max-w-sm bg-white border border-slate-200 shadow-2xl rounded-3xl p-6 space-y-6 transform scale-100 transition-all"
-		>
-			<div class="text-center space-y-3">
-				<div
-					class="w-12 h-12 bg-red-50 rounded-2xl flex items-center justify-center mx-auto text-red-500 text-xl font-bold"
-				>
-					⚠️
-				</div>
-				<h3
-					class="text-lg font-bold text-slate-800"
-				>
-					Excluir Inspeção
-				</h3>
-				<p class="text-xs text-slate-500 max-w-xs mx-auto">
-					Tem certeza de que deseja excluir este registro de inspeção?
-					Esta ação é irreversível.
-				</p>
-			</div>
-			<div class="flex gap-3">
-				<button
-					onclick={cancelDelete}
-					class="flex-1 py-3 text-center text-xs font-bold text-slate-700 hover:text-slate-900  bg-slate-100 hover:bg-slate-200  rounded-xl transition-all cursor-pointer border border-slate-200"
-					disabled={isDeleting}
-				>
-					Cancelar
-				</button>
-				<button
-					onclick={deleteInspection}
-					class="flex-1 py-3 text-center text-xs font-bold text-white bg-red-600 hover:bg-red-500 rounded-xl transition-all shadow-md shadow-red-600/10 cursor-pointer"
-					disabled={isDeleting}
-				>
-					{isDeleting ? "Excluindo..." : "Excluir"}
-				</button>
-			</div>
-		</div>
+		{#if authState.canInspect('write')}<a
+				class="btn primary"
+				href="/dashboard/new"><Icon name="plus" />Nova vistoria</a
+			>{/if}
 	</div>
-{/if}
+	{#if page.url.searchParams.get('completed')}<Notice
+			type="success"
+			message="Vistoria concluída e salva neste dispositivo. Acompanhe o envio abaixo."
+		/>{/if}
+	{#if offline}<Notice
+			type="info"
+			message="Você está offline. Suas vistorias ficam salvas neste dispositivo e serão enviadas quando a conexão voltar."
+		/>{/if}
+	<div class="section-heading section">
+		<span class="muted inline"
+			><Icon
+				name={offline ? 'offline' : syncing.size ? 'refresh' : 'cloud'}
+				size={17}
+			/>{offline
+				? 'Sem conexão'
+				: syncing.size
+					? 'Enviando vistorias…'
+					: allPending.length
+						? `${allPending.length} ${allPending.length === 1 ? 'vistoria aguardando envio' : 'vistorias aguardando envio'}`
+						: 'Tudo sincronizado'}</span
+		><a class="text-action" href="/dashboard/checklists"
+			>Ver histórico<Icon name="arrow" size={16} /></a
+		>
+	</div>
+	<div class="search">
+		<Icon name="search" size={18} /><input
+			type="search"
+			aria-label="Buscar rascunhos e vistorias pendentes"
+			bind:value={search}
+			placeholder="Buscar por placa ou cliente"
+		/>
+	</div>
+	<Notice message={error} onretry={load} />
+	{#if loading}<div
+			class="panel section"
+			role="status"
+			aria-label="Carregando vistorias"
+		>
+			<div class="skeleton"></div>
+			<div class="skeleton"></div>
+		</div>
+	{:else if !error}
+		<section class="section">
+			<div class="section-heading">
+				<h2>Continuar vistoria <span class="count">{drafts.length}</span></h2>
+			</div>
+			{#if drafts.length}<div class="panel inspection-list">
+					{#each drafts as record (record.id)}<InspectionRow
+							inspection={record}
+							href={`/dashboard/new?id=${encodeURIComponent(record.id)}`}
+							ondelete={authState.canInspect('delete')
+								? () => {
+										deleting = record;
+										deleteError = '';
+									}
+								: null}
+						/>{/each}
+				</div>
+			{:else}<EmptyState
+					icon="edit"
+					title={search
+						? 'Nenhum rascunho encontrado'
+						: 'Nenhuma vistoria em andamento'}
+					description={search
+						? 'Tente outra placa ou nome de cliente.'
+						: 'Ao iniciar uma vistoria, você pode salvar e continuar depois.'}
+				/>{/if}
+		</section>
+		<section class="section">
+			<div class="section-heading">
+				<h2>Aguardando envio <span class="count">{pending.length}</span></h2>
+				{#if pending.length && !offline}<button
+						class="text-action"
+						disabled={syncing.size > 0}
+						onclick={syncPending}
+						><Icon name="refresh" size={16} />Enviar todas</button
+					>{/if}
+			</div>
+			{#if pending.length}<div class="panel inspection-list">
+					{#each pending as record (record.id)}<InspectionRow
+							inspection={record}
+							href={`/dashboard/new/${encodeURIComponent(record.id)}`}
+							busy={syncing.has(record.id)}
+							onretry={!offline ? () => sync(record) : null}
+						/>{/each}
+				</div>
+			{:else}<EmptyState
+					icon="check"
+					title={search
+						? 'Nenhuma vistoria pendente encontrada'
+						: 'Nenhum envio pendente'}
+					description={search
+						? 'Tente outra placa ou nome de cliente.'
+						: 'As vistorias concluídas e sincronizadas estão no histórico.'}
+				/>{/if}
+		</section>
+	{/if}
+</main>
+{#if deleting}<Dialog
+		title="Excluir vistoria?"
+		onclose={() => (deleting = null)}
+		busy={deleteBusy}
+		><div class="stack">
+			<p>
+				A vistoria de <strong>{deleting.licensePlate}</strong> será excluída. Esta
+				ação não pode ser desfeita.
+			</p>
+			<Notice message={deleteError} />
+		</div>
+		{#snippet footer()}<button
+				class="btn"
+				disabled={deleteBusy}
+				onclick={() => (deleting = null)}>Cancelar</button
+			><button class="btn danger" disabled={deleteBusy} onclick={remove}
+				>{deleteBusy ? 'Excluindo…' : 'Excluir vistoria'}</button
+			>{/snippet}</Dialog
+	>{/if}

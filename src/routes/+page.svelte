@@ -1,283 +1,151 @@
 <script>
-  import { goto } from "$app/navigation";
-  import logo from "$lib/assets/logo_alug_locadora.png";
-  import { auth } from "$lib/firebase.js";
-  import { signInWithEmailAndPassword } from "firebase/auth";
-  import { authState } from '$lib/auth.svelte.js';
+	import Icon from '$lib/components/Icon.svelte';
+	import Notice from '$lib/components/Notice.svelte';
+	import { goto } from '$app/navigation';
+	import logo from '$lib/assets/logo_alug_locadora.png';
+	import { auth } from '$lib/firebase.js';
+	import { signInWithEmailAndPassword } from 'firebase/auth';
+	import { authState } from '$lib/auth.svelte.js';
 
-  let email = $state("");
-  let password = $state("");
-  let showPassword = $state(false);
-  let isLoading = $state(false);
-  let hasError = $state(false);
-  let errorMessage = $state("");
+	let email = $state('');
+	let password = $state('');
+	let showPassword = $state(false);
+	let isLoading = $state(false);
+	let hasError = $state(false);
+	let errorMessage = $state('');
 
-  $effect(() => {
-    if (!authState.loading && authState.user) {
-      goto("/dashboard");
-    }
-  });
+	$effect(() => {
+		if (!authState.loading && authState.user) {
+			goto('/dashboard');
+		}
+	});
 
-  async function handleLogin(e) {
-    e.preventDefault();
-    hasError = false;
-    errorMessage = "";
-    isLoading = true;
+	async function handleLogin(e) {
+		e.preventDefault();
+		if (isLoading) return;
+		hasError = false;
+		errorMessage = '';
+		isLoading = true;
 
-    const trimmedEmail = email.trim().toLowerCase();
+		const trimmedEmail = email.trim().toLowerCase();
 
-    try {
-      // Authenticate via Firebase
-      const userCredential = await signInWithEmailAndPassword(
-        auth,
-        trimmedEmail,
-        password,
-      );
-      const user = userCredential.user;
+		try {
+			// Authenticate via Firebase
+			const userCredential = await signInWithEmailAndPassword(
+				auth,
+				trimmedEmail,
+				password
+			);
+			const user = userCredential.user;
 
-      // Verify custom claims roles
-      const idTokenResult = await user.getIdTokenResult(true);
-      const roles = idTokenResult.claims?.roles;
-      const canUseChecklist =
-        (Array.isArray(roles?.operations) && roles.operations.includes('read')) ||
-        (Array.isArray(roles?.administrator) && roles.administrator.includes('read'));
+			// Verify custom claims roles
+			const idTokenResult = await user.getIdTokenResult(true);
+			const roles = idTokenResult.claims?.roles;
+			const canUseChecklist =
+				(Array.isArray(roles?.operations) &&
+					roles.operations.includes('read')) ||
+				(Array.isArray(roles?.administrator) &&
+					roles.administrator.includes('read'));
 
-      if (!canUseChecklist) {
-        await auth.signOut();
-        errorMessage =
-          "Acesso negado. Esta conta não possui permissão de leitura do Checklist.";
-        hasError = true;
-        isLoading = false;
-        return;
-      }
+			if (!canUseChecklist) {
+				await auth.signOut();
+				errorMessage =
+					'Acesso negado. Esta conta não possui permissão de leitura do Checklist.';
+				hasError = true;
+				isLoading = false;
+				return;
+			}
 
-      goto("/dashboard");
-    } catch (error) {
-      console.error("Firebase Auth Error:", error.code, error.message);
+			goto('/dashboard');
+		} catch (error) {
+			console.error('Firebase Auth Error:', error.code, error.message);
 
-      // User-friendly error translations
-      switch (error.code) {
-        case "auth/invalid-credential":
-        case "auth/wrong-password":
-        case "auth/user-not-found":
-          errorMessage =
-            "E-mail ou senha incorretos. Por favor, verifique suas credenciais.";
-          break;
-        case "auth/invalid-email":
-          errorMessage = "O formato do e-mail inserido é inválido.";
-          break;
-        case "auth/user-disabled":
-          errorMessage =
-            "Esta conta de usuário foi desativada pela administração.";
-          break;
-        case "auth/too-many-requests":
-          errorMessage =
-            "Muitas tentativas malsucedidas de acesso. Tente novamente mais tarde.";
-          break;
-        default:
-          errorMessage =
-            "Erro de autenticação: " + (error.message || error.code);
-      }
+			// User-friendly error translations
+			switch (error.code) {
+				case 'auth/invalid-credential':
+				case 'auth/wrong-password':
+				case 'auth/user-not-found':
+					errorMessage =
+						'E-mail ou senha incorretos. Por favor, verifique suas credenciais.';
+					break;
+				case 'auth/invalid-email':
+					errorMessage = 'O formato do e-mail inserido é inválido.';
+					break;
+				case 'auth/user-disabled':
+					errorMessage =
+						'Esta conta de usuário foi desativada pela administração.';
+					break;
+				case 'auth/too-many-requests':
+					errorMessage =
+						'Muitas tentativas malsucedidas de acesso. Tente novamente mais tarde.';
+					break;
+				default:
+					errorMessage =
+						'Erro de autenticação: ' + (error.message || error.code);
+			}
 
-      hasError = true;
-      isLoading = false;
-    }
-  }
+			hasError = true;
+			isLoading = false;
+		}
+	}
 </script>
 
-<svelte:head>
-  <title>Checklist Alug - Acesso ao Sistema</title>
-  <meta
-    name="description"
-    content="Acesse a suíte de inspeção e auditoria digital de veículos Checklist Alug."
-  />
-</svelte:head>
-
-<div
-  class="min-h-screen bg-slate-50 text-slate-900 flex flex-col justify-center items-center p-4 relative overflow-hidden font-sans select-none"
+<svelte:head
+	><title>Entrar · Checklist Alug</title><meta
+		name="description"
+		content="Vistorias de veículos com fotos, assinatura e acesso offline."
+	/></svelte:head
 >
-  <!-- Background Ambient Glows -->
-  <div
-    class="absolute w-[400px] h-[400px] rounded-full bg-neutral-900/3 blur-[120px] top-[-10%] left-[-10%] pointer-events-none"
-  ></div>
-  <div
-    class="absolute w-[500px] h-[500px] rounded-full bg-neutral-950/2 blur-[150px] bottom-[-20%] right-[-10%] pointer-events-none"
-  ></div>
-
-  <!-- Login Card Wrapper -->
-  <div class="w-full max-w-md z-10 transition-all duration-300">
-    <!-- Branding / Logo Header -->
-    <div class="text-center mb-8 space-y-3">
-      <div
-        class="inline-flex items-center justify-center p-2 rounded-2xl bg-white shadow-md border border-slate-200"
-      >
-        <img
-          src={logo}
-          alt="Checklist Alug Logo"
-          class="h-12 w-auto object-contain"
-        />
-      </div>
-      <div>
-        <h1
-          class="text-2xl font-black tracking-tight text-slate-950 leading-none"
-        >
-          Checklist Alug
-        </h1>
-        <span
-          class="text-[10px] text-slate-400 font-bold tracking-widest uppercase mt-2 block"
-          >Portal do Inspetor</span
-        >
-      </div>
-    </div>
-
-    <!-- Card Body -->
-    <div
-      class="bg-white border border-slate-200/80 shadow-xl rounded-3xl p-6 sm:p-8 space-y-6"
-    >
-      <div class="text-center space-y-1">
-        <h2 class="text-lg font-bold text-slate-800">Acesse sua Conta</h2>
-        <p class="text-xs text-slate-500">
-          Insira suas credenciais para gerenciar vistorias.
-        </p>
-      </div>
-
-      <!-- Error Box with transition -->
-      {#if hasError}
-        <div
-          class="bg-red-50 border border-red-100 rounded-2xl p-4 flex gap-3 items-start text-xs text-red-600 animate-shake"
-        >
-          <span class="text-lg leading-none">⚠️</span>
-          <div>
-            <p class="font-bold text-red-800">Erro de Login</p>
-            <p class="mt-0.5 text-red-600/90">{errorMessage}</p>
-          </div>
-        </div>
-      {/if}
-
-      <!-- Login Form -->
-      <form onsubmit={handleLogin} class="space-y-4">
-        <!-- Email Input -->
-        <div class="space-y-1.5">
-          <label
-            class="block text-xs font-semibold text-slate-600"
-            for="login-email"
-          >
-            Endereço de E-mail
-          </label>
-          <div class="relative">
-            <span
-              class="absolute inset-y-0 left-4 flex items-center text-slate-400"
-            >
-              ✉️
-            </span>
-            <input
-              id="login-email"
-              type="email"
-              bind:value={email}
-              placeholder="nome@teste.com"
-              required
-              class="w-full bg-slate-50 border border-slate-200 focus:border-primary focus:bg-white rounded-2xl pl-11 pr-4 py-3 text-sm text-slate-900 outline-none transition-all placeholder:text-slate-400"
-              disabled={isLoading}
-            />
-          </div>
-        </div>
-
-        <!-- Password Input -->
-        <div class="space-y-1.5">
-          <div class="flex justify-between items-center">
-            <label
-              class="block text-xs font-semibold text-slate-600"
-              for="login-pwd"
-            >
-              Senha
-            </label>
-          </div>
-          <div class="relative">
-            <span
-              class="absolute inset-y-0 left-4 flex items-center text-slate-400"
-            >
-              🔒
-            </span>
-            <input
-              id="login-pwd"
-              type={showPassword ? "text" : "password"}
-              bind:value={password}
-              placeholder="Sua senha"
-              required
-              class="w-full bg-slate-50 border border-slate-200 focus:border-primary focus:bg-white rounded-2xl pl-11 pr-12 py-3 text-sm text-slate-900 outline-none transition-all placeholder:text-slate-400 font-sans"
-              disabled={isLoading}
-            />
-            <button
-              type="button"
-              onclick={() => (showPassword = !showPassword)}
-              class="absolute inset-y-0 right-4 flex items-center text-slate-400 hover:text-slate-600 transition-colors text-sm cursor-pointer"
-              title={showPassword ? "Ocultar senha" : "Exibir senha"}
-            >
-              {showPassword ? "👁" : "👁️‍🗨️"}
-            </button>
-          </div>
-        </div>
-
-        <!-- Submit Button -->
-        <button
-          type="submit"
-          disabled={isLoading}
-          class="w-full py-3.5 bg-primary hover:bg-primary-hover text-white font-extrabold rounded-2xl transition-all shadow-md hover:shadow-lg active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none flex items-center justify-center gap-2 cursor-pointer mt-6 text-sm"
-        >
-          {#if isLoading}
-            <svg
-              class="animate-spin h-5 w-5 text-white"
-              xmlns="http://www.w3.org/2000/svg"
-              fill="none"
-              viewBox="0 0 24 24"
-            >
-              <circle
-                class="opacity-25"
-                cx="12"
-                cy="12"
-                r="10"
-                stroke="currentColor"
-                stroke-width="4"
-              ></circle>
-              <path
-                class="opacity-75"
-                fill="currentColor"
-                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-              ></path>
-            </svg>
-            <span>Autenticando...</span>
-          {:else}
-            <span>Entrar no Sistema</span>
-          {/if}
-        </button>
-      </form>
-    </div>
-
-    <!-- Footer Meta -->
-    <p class="text-center text-[10px] text-slate-400 mt-8">
-      © 2026 Checklist Alug. Executando localmente no navegador. Todos os dados
-      permanecem salvos em seu dispositivo.
-    </p>
-  </div>
+<div class="login-page">
+	<div class="login-top">
+		<img src={logo} alt="Alug" /><span class="brand-title">Checklist</span>
+	</div>
+	<main class="login-wrap">
+		<span class="eyebrow">Portal do inspetor</span>
+		<h1>Pronto para a próxima vistoria.</h1>
+		<p>
+			Acesse sua conta para iniciar uma vistoria ou continuar de onde parou.
+		</p>
+		<form onsubmit={handleLogin} class="stack">
+			<Notice message={errorMessage} />
+			<div class="field">
+				<label for="login-email">E-mail</label><input
+					id="login-email"
+					type="email"
+					autocomplete="username"
+					bind:value={email}
+					placeholder="voce@empresa.com.br"
+					required
+					disabled={isLoading}
+				/>
+			</div>
+			<div class="field">
+				<label for="login-pwd">Senha</label>
+				<div class="password-field">
+					<input
+						id="login-pwd"
+						type={showPassword ? 'text' : 'password'}
+						autocomplete="current-password"
+						bind:value={password}
+						placeholder="Sua senha"
+						required
+						disabled={isLoading}
+					/><button
+						type="button"
+						class="icon-button"
+						onclick={() => (showPassword = !showPassword)}
+						aria-label={showPassword ? 'Ocultar senha' : 'Mostrar senha'}
+						aria-pressed={showPassword}><Icon name="eye" /></button
+					>
+				</div>
+			</div>
+			<button class="btn primary full" disabled={isLoading} type="submit"
+				>{#if isLoading}<span class="spinner"></span>Entrando…{:else}Entrar<Icon
+						name="arrow"
+						size={18}
+					/>{/if}</button
+			>
+		</form>
+	</main>
+	<p class="login-footer">Alug Locadora · Checklist de veículos</p>
 </div>
-
-<style>
-  /* Subtle Shake Animation for Errors */
-  @keyframes shake {
-    0%,
-    100% {
-      transform: translateX(0);
-    }
-    20%,
-    60% {
-      transform: translateX(-4px);
-    }
-    40%,
-    80% {
-      transform: translateX(4px);
-    }
-  }
-  .animate-shake {
-    animation: shake 0.4s ease-in-out;
-  }
-</style>
