@@ -2,11 +2,19 @@
   import { onMount } from "svelte";
   import { page } from "$app/stores";
   import { goto } from "$app/navigation";
-  import { db } from "$lib/firebase.js";
-  import { doc, getDoc, setDoc } from "firebase/firestore";
+  import { db } from "$lib/firebaseDb.js";
+  import { doc, getDoc } from "firebase/firestore";
   import { saveInspection as saveToDB } from "$lib/db.js";
   import logo from "$lib/assets/logo_alug_locadora.png";
   import Navbar from "$lib/components/Navbar.svelte";
+  import { normalizeCloudInspection } from '$lib/inspection.js';
+  import { authenticatedFetch } from '$lib/api.js';
+  import {
+    PART_NAMES as partNames,
+    STATUS_BADGE_STYLES as statusBadgeStyles,
+    STATUS_LABELS as statusLabels,
+    countDamages,
+  } from '$lib/inspection.js';
 
   // Retrieve route params reactively
   let id = $derived($page.params.id);
@@ -18,53 +26,6 @@
   let activePreviewPartKey = $state(null);
   let activePreviewPhotoIndex = $state(null);
 
-  const partNames = {
-    front_bumper: "Parachoque Dianteiro",
-    hood: "Capô",
-    windshield: "Parabrisa",
-    roof: "Teto",
-    rear_glass: "Vidro Traseiro",
-    trunk: "Porta-Malas / Traseira",
-    rear_bumper: "Parachoque Traseiro",
-    left_fender: "Paralama Diant. Esq.",
-    left_front_door: "Porta Diant. Esq.",
-    left_front_window: "Vidro Diant. Esq.",
-    left_rear_door: "Porta Tras. Esq.",
-    left_rear_window: "Vidro Tras. Esq.",
-    left_rear_quarter: "Lateral Tras. Esq.",
-    right_fender: "Paralama Diant. Dir.",
-    right_front_door: "Porta Diant. Dir.",
-    right_front_window: "Vidro Diant. Dir.",
-    right_rear_door: "Porta Tras. Dir.",
-    right_rear_window: "Vidro Tras. Dir.",
-    right_rear_quarter: "Lateral Tras. Dir.",
-    interior: "Interior da Cabine",
-    left_front_wheel: "Roda Diant. Esq.",
-    right_front_wheel: "Roda Diant. Dir.",
-    left_rear_wheel: "Roda Tras. Esq.",
-    right_rear_wheel: "Roda Tras. Dir.",
-  };
-
-  const statusLabels = {
-    none: "Sem Danos",
-    scratch: "Risco",
-    dent: "Amassado",
-    crack: "Trincado",
-    broken: "Quebrado",
-    damaged: "Danificado",
-  };
-
-  const statusBadgeStyles = {
-    scratch:
-      "text-amber-600  border-amber-500/40 bg-white  print:text-amber-600 print:border-amber-400",
-    dent: "text-orange-600  border-orange-500/40 bg-white  print:text-orange-600 print:border-orange-400",
-    crack:
-      "text-purple-600  border-purple-500/40 bg-white  print:text-purple-600 print:border-purple-400",
-    broken:
-      "text-red-600  border-red-500/40 bg-white  print:text-red-600 print:border-red-400",
-    damaged:
-      "text-indigo-600  border-indigo-500/40 bg-white  print:text-indigo-600 print:border-indigo-400",
-  };
 
   // Fetch Firestore document reactively when route changes
   $effect(() => {
@@ -79,7 +40,7 @@
       const docRef = doc(db, "checklists", docId);
       const docSnap = await getDoc(docRef);
       if (docSnap.exists()) {
-        selectedInspection = docSnap.data();
+		selectedInspection = normalizeCloudInspection(docSnap.data(), docSnap.id);
       } else {
         console.error("Checklist not found in Firestore");
         selectedInspection = null;
@@ -102,18 +63,29 @@
       selectedInspection &&
       selectedInspection.partStates?.[partKey]?.photos
     ) {
-      // Filter out the photo
+		const previousPartStates = structuredClone($state.snapshot(selectedInspection.partStates));
+		const photoPath = selectedInspection.partStates[partKey].photoPaths?.[photoIndex];
+		if (!photoPath) {
+			alert("Esta foto não possui um caminho de armazenamento válido.");
+			return;
+		}
       selectedInspection.partStates[partKey].photos =
         selectedInspection.partStates[partKey].photos.filter(
           (_, idx) => idx !== photoIndex,
         );
+		selectedInspection.partStates[partKey].photoPaths =
+			selectedInspection.partStates[partKey].photoPaths.filter((_, idx) => idx !== photoIndex);
 
       try {
-        // Save in Cloud Firestore
-        await setDoc(
-          doc(db, "checklists", selectedInspection.id),
-          $state.snapshot(selectedInspection),
-        );
+		const response = await authenticatedFetch(
+		  `/api/checklists/${encodeURIComponent(selectedInspection.id)}/photos`,
+		  {
+			method: 'DELETE',
+			body: JSON.stringify({ partKey, photoPath }),
+		  },
+		);
+		const payload = await response.json();
+		selectedInspection.partStates = payload.partStates;
 
         // Also update local IndexedDB if cached
         try {
@@ -122,21 +94,11 @@
           console.warn("Could not save to local IndexedDB:", e);
         }
       } catch (e) {
+		selectedInspection.partStates = previousPartStates;
         console.error("Failed to delete photo from Firestore checklist:", e);
         alert("Falha ao excluir a foto.");
       }
     }
-  }
-
-  // Count damage issues in an inspection
-  function countDamages(states) {
-    let count = 0;
-    for (const key in states) {
-      if (states[key]?.status && states[key].status !== "none") {
-        count++;
-      }
-    }
-    return count;
   }
 
   function triggerPrint() {
@@ -184,7 +146,7 @@
         <div class="flex justify-between items-center print:hidden">
           <button
             onclick={() => goto("/dashboard/checklists")}
-            class="px-5 py-2.5 bg-white border border-slate-200 hover:bg-slate-50 :bg-slate-850 text-slate-700 font-bold rounded-xl text-sm transition-all cursor-pointer shadow-xs"
+            class="px-5 py-2.5 bg-white border border-slate-200 hover:bg-slate-50  text-slate-700 font-bold rounded-xl text-sm transition-all cursor-pointer shadow-xs"
           >
             ← Voltar aos Checklists
           </button>
@@ -209,7 +171,7 @@
           >
             <div class="flex items-center gap-3">
               <div
-                class="flex items-center justify-center p-1 bg-white rounded-lg border border-slate-150 shadow-xs"
+                class="flex items-center justify-center p-1 bg-white rounded-lg border border-slate-200 shadow-xs"
               >
                 <img
                   src={logo}
@@ -337,6 +299,7 @@
                   <img
                     src={selectedInspection.clientLicensePhoto}
                     alt="CNH do Cliente"
+                    loading="lazy"
                     class="w-full h-full object-contain"
                   />
                 </div>
@@ -360,6 +323,7 @@
                 <img
                   src={selectedInspection.carDiagramImage}
                   alt="Mapa de Danos do Veículo"
+                  loading="lazy"
                   class="w-full h-auto select-none max-h-[350px] object-contain"
                 />
                 <span
@@ -395,7 +359,7 @@
                           class="px-3 py-1 text-xs font-black uppercase rounded-lg border {statusBadgeStyles[
                             selectedInspection.partStates[partKey].status
                           ] ||
-                            'bg-white border-slate-200 text-slate-650 print:text-slate-650 print:border-slate-400'}"
+                            'bg-white border-slate-200 text-slate-600 print:text-slate-600 print:border-slate-400'}"
                         >
                           {statusLabels[
                             selectedInspection.partStates[partKey].status
@@ -427,6 +391,7 @@
                               <img
                                 src={photo}
                                 alt="{partKey} {idx}"
+                                loading="lazy"
                                 class="w-full h-full object-cover"
                               />
                             </button>
@@ -455,6 +420,7 @@
                   <img
                     src={selectedInspection.clientSignature}
                     alt="Assinatura"
+                    loading="lazy"
                     class="h-full object-contain"
                   />
                 {:else}
@@ -527,7 +493,7 @@
               activePreviewPartKey = null;
               activePreviewPhotoIndex = null;
             }}
-            class="px-6 py-3 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-xl transition-all cursor-pointer text-sm border border-slate-750"
+            class="px-6 py-3 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-xl transition-all cursor-pointer text-sm border border-slate-700"
           >
             Fechar
           </button>

@@ -9,23 +9,15 @@
 	let drawing = false;
 	let lastX = 0;
 	let lastY = 0;
+	let resizeObserver;
 
 	onMount(() => {
 		ctx = canvas.getContext('2d');
 		setupCanvas();
-
-		// Register touch events with passive: false to allow preventDefault
-		canvas.addEventListener('touchstart', startDrawing, { passive: false });
-		canvas.addEventListener('touchmove', draw, { passive: false });
-		canvas.addEventListener('touchend', stopDrawing, { passive: false });
-
-		// Handle resize
-		window.addEventListener('resize', setupCanvas);
+		resizeObserver = new ResizeObserver(setupCanvas);
+		resizeObserver.observe(canvas);
 		return () => {
-			canvas.removeEventListener('touchstart', startDrawing);
-			canvas.removeEventListener('touchmove', draw);
-			canvas.removeEventListener('touchend', stopDrawing);
-			window.removeEventListener('resize', setupCanvas);
+			resizeObserver?.disconnect();
 		};
 	});
 
@@ -37,8 +29,10 @@
 
 		// Make it high-DPI friendly
 		const rect = canvas.getBoundingClientRect();
-		canvas.width = rect.width;
-		canvas.height = rect.height;
+		const ratio = Math.max(1, window.devicePixelRatio || 1);
+		canvas.width = Math.round(rect.width * ratio);
+		canvas.height = Math.round(rect.height * ratio);
+		ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
 
 		ctx.strokeStyle = '#3b82f6'; // Premium blue line
 		ctx.lineWidth = 3;
@@ -49,7 +43,7 @@
 		if (tempImage) {
 			const img = new Image();
 			img.onload = () => {
-				ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+				ctx.drawImage(img, 0, 0, rect.width, rect.height);
 			};
 			img.src = tempImage;
 		}
@@ -57,24 +51,15 @@
 
 	function getCoordinates(e) {
 		const rect = canvas.getBoundingClientRect();
-		let clientX, clientY;
-
-		if (e.touches && e.touches.length > 0) {
-			clientX = e.touches[0].clientX;
-			clientY = e.touches[0].clientY;
-		} else {
-			clientX = e.clientX;
-			clientY = e.clientY;
-		}
-
 		return {
-			x: clientX - rect.left,
-			y: clientY - rect.top
+			x: e.clientX - rect.left,
+			y: e.clientY - rect.top
 		};
 	}
 
 	function startDrawing(e) {
-		if (e.cancelable) e.preventDefault();
+		if (e.button !== undefined && e.button !== 0) return;
+		canvas.setPointerCapture?.(e.pointerId);
 		drawing = true;
 		const coords = getCoordinates(e);
 		lastX = coords.x;
@@ -101,9 +86,12 @@
 		lastY = coords.y;
 	}
 
-	function stopDrawing() {
+	function stopDrawing(e) {
 		if (!drawing) return;
 		drawing = false;
+		if (e?.pointerId != null && canvas.hasPointerCapture?.(e.pointerId)) {
+			canvas.releasePointerCapture(e.pointerId);
+		}
 		// Update signature binding with base64 representation
 		signature = canvas.toDataURL('image/png');
 	}
@@ -118,10 +106,10 @@
 	<div class="relative w-full h-[180px] bg-slate-50 border border-slate-200 rounded-xl overflow-hidden focus-within:ring-2 focus-within:ring-blue-500">
 		<canvas
 			bind:this={canvas}
-			onmousedown={startDrawing}
-			onmousemove={draw}
-			onmouseup={stopDrawing}
-			onmouseleave={stopDrawing}
+			onpointerdown={startDrawing}
+			onpointermove={draw}
+			onpointerup={stopDrawing}
+			onpointercancel={stopDrawing}
 			class="w-full h-full cursor-crosshair touch-none"
 		></canvas>
 
@@ -144,10 +132,9 @@
 		<button
 			type="button"
 			onclick={clearCanvas}
-			class="px-3 py-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 :text-white bg-slate-100 hover:bg-slate-200 :bg-slate-700 border border-slate-200 rounded-lg transition-all cursor-pointer"
+			class="px-3 py-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900  bg-slate-100 hover:bg-slate-200  border border-slate-200 rounded-lg transition-all cursor-pointer"
 		>
 			Limpar Assinatura
 		</button>
 	</div>
 </div>
-

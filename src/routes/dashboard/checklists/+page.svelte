@@ -1,50 +1,65 @@
 <script>
 	import { onMount } from "svelte";
 	import { goto } from "$app/navigation";
-	import { db } from "$lib/firebase.js";
-	import { collection, getDocs, query, orderBy, limit } from "firebase/firestore";
+	import { db } from "$lib/firebaseDb.js";
+	import { collection, getDocs, query, orderBy, limit, startAfter, where } from "firebase/firestore";
 	import Navbar from "$lib/components/Navbar.svelte";
+	import { authState } from '$lib/auth.svelte.js';
+	import { countDamages, normalizeCloudInspection } from '$lib/inspection.js';
 
 	// Page states
 	let checklists = $state([]);
 	let loading = $state(true);
 	let errorMsg = $state("");
+	let lastDocument = null;
+	let hasMore = $state(true);
+	let loadingMore = $state(false);
 
 	// Search & Filter state
 	let searchQuery = $state("");
 	let filterType = $state("All");
 
 	onMount(async () => {
-		try {
-			// Query the last 20 checklists from Cloud Firestore ordered by inspection date
-			const q = query(
-				collection(db, "checklists"),
-				orderBy("inspectionDateTime", "desc"),
-				limit(20)
-			);
-			const querySnapshot = await getDocs(q);
-			let list = [];
-			querySnapshot.forEach((doc) => {
-				list.push(doc.data());
-			});
-			checklists = list;
-		} catch (e) {
-			console.error("Failed to load checklists from Firestore:", e);
-			errorMsg = "Falha ao carregar os checklists da nuvem. Verifique sua conexão.";
-		} finally {
-			loading = false;
-		}
+		await loadChecklists();
 
 		// Force light theme
 		document.documentElement.classList.remove("dark");
 	});
 
+	async function loadChecklists({ append = false } = {}) {
+		if (!authState.user || (append && (!hasMore || loadingMore))) return;
+		if (append) loadingMore = true;
+		else loading = true;
+		try {
+			const constraints = [];
+			if (!authState.hasPermission('administrator', 'read')) {
+				constraints.push(where('ownerUid', '==', authState.user.uid));
+			}
+			constraints.push(orderBy('inspectionDateTime', 'desc'), limit(20));
+			if (append && lastDocument) constraints.push(startAfter(lastDocument));
+			const q = query(collection(db, 'checklist_summaries'), ...constraints);
+			const querySnapshot = await getDocs(q);
+			const list = querySnapshot.docs.map((snapshot) =>
+				normalizeCloudInspection(snapshot.data(), snapshot.id)
+			);
+			checklists = append ? [...checklists, ...list] : list;
+			lastDocument = querySnapshot.docs.at(-1) || lastDocument;
+			hasMore = querySnapshot.size === 20;
+		} catch (e) {
+			console.error("Failed to load checklists from Firestore:", e);
+			errorMsg = "Falha ao carregar os checklists da nuvem. Verifique sua conexão.";
+		} finally {
+			loading = false;
+			loadingMore = false;
+		}
+	}
+
 	// Filter checklists based on search query and type filter
 	const filteredChecklists = $derived(
 		checklists.filter((i) => {
 			const matchesSearch =
-				i.licensePlate.toLowerCase().includes(searchQuery.toLowerCase()) ||
-				i.clientName.toLowerCase().includes(searchQuery.toLowerCase());
+				(i.licensePlate || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+				(i.clientName || '').toLowerCase().includes(searchQuery.toLowerCase());
 			
 			const matchesType =
 				filterType === "All" || i.inspectionType === filterType;
@@ -53,16 +68,6 @@
 		})
 	);
 
-	// Count damage issues in an inspection
-	function countDamages(states) {
-		let count = 0;
-		for (const key in states) {
-			if (states[key]?.status && states[key].status !== "none") {
-				count++;
-			}
-		}
-		return count;
-	}
 </script>
 
 <svelte:head>
@@ -93,13 +98,13 @@
 						Vistorias na Nuvem
 					</h2>
 					<p class="text-xs text-slate-500 mt-2">
-						Central de auditoria digital mostrando as últimas 20 vistorias sincronizadas na nuvem.
+						Central de auditoria digital com histórico paginado de vistorias sincronizadas.
 					</p>
 				</div>
 
 				<button
 					onclick={() => goto("/dashboard")}
-					class="w-full md:w-auto px-5 py-3 bg-white border border-slate-200 hover:bg-slate-50 :bg-slate-850 text-slate-700 font-bold rounded-2xl text-sm transition-all cursor-pointer shadow-sm flex items-center justify-center gap-2"
+					class="w-full md:w-auto px-5 py-3 bg-white border border-slate-200 hover:bg-slate-50  text-slate-700 font-bold rounded-2xl text-sm transition-all cursor-pointer shadow-sm flex items-center justify-center gap-2"
 				>
 					← Voltar ao Painel
 				</button>
@@ -186,14 +191,14 @@
 					</div>
 					<button
 						onclick={() => window.location.reload()}
-						class="px-5 py-2.5 bg-red-650 hover:bg-red-500 text-white font-bold rounded-xl text-xs transition-all cursor-pointer"
+						class="px-5 py-2.5 bg-red-600 hover:bg-red-500 text-white font-bold rounded-xl text-xs transition-all cursor-pointer"
 					>
 						Tentar Novamente
 					</button>
 				</div>
 			{:else if filteredChecklists.length === 0}
 				<div
-					class="p-12 mt-6 border border-dashed border-slate-350 bg-white rounded-3xl text-center space-y-4"
+					class="p-12 mt-6 border border-dashed border-slate-300 bg-white rounded-3xl text-center space-y-4"
 				>
 					<div
 						class="w-12 h-12 bg-slate-100 rounded-2xl flex items-center justify-center mx-auto text-slate-400"
@@ -216,7 +221,7 @@
 				<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-6">
 					{#each filteredChecklists as rep (rep.id || rep.licensePlate + rep.inspectionDateTime)}
 						<div
-							class="bg-white hover:bg-slate-50/50 :bg-slate-900/60 border border-slate-200 hover:border-slate-300 :border-slate-800 shadow-sm hover:shadow-md rounded-2xl p-5 transition-all flex flex-col justify-between group relative overflow-hidden"
+							class="bg-white hover:bg-slate-50/50  border border-slate-200 hover:border-slate-300  shadow-sm hover:shadow-md rounded-2xl p-5 transition-all flex flex-col justify-between group relative overflow-hidden"
 						>
 							<div class="flex justify-between items-start">
 								<div>
@@ -244,7 +249,7 @@
 									<span
 										class="px-2.5 py-1 text-[10px] font-black uppercase rounded-lg bg-slate-50 border border-slate-200 text-amber-600"
 									>
-										{countDamages(rep.partStates)} Danos
+										{rep.damageCount ?? countDamages(rep.partStates)} Danos
 									</span>
 								</div>
 							</div>
@@ -296,6 +301,17 @@
 						</div>
 					{/each}
 				</div>
+				{#if hasMore}
+					<div class="flex justify-center pt-5">
+						<button
+							onclick={() => loadChecklists({ append: true })}
+							disabled={loadingMore}
+							class="px-5 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-bold text-slate-700 disabled:opacity-50"
+						>
+							{loadingMore ? 'Carregando…' : 'Carregar mais'}
+						</button>
+					</div>
+				{/if}
 			{/if}
 		</div>
 	</main>

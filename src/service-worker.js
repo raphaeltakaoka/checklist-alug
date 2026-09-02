@@ -3,19 +3,32 @@
 /// <reference lib="webworker" />
 /// <reference types="@sveltejs/kit" />
 
-import { build, files, version } from '$service-worker';
+import { build, version } from '$service-worker';
 import { initializeApp } from "firebase/app";
 import { getMessaging, onBackgroundMessage } from "firebase/messaging/sw";
+import {
+	PUBLIC_FIREBASE_API_KEY,
+	PUBLIC_FIREBASE_APP_ID,
+	PUBLIC_FIREBASE_AUTH_DOMAIN,
+	PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+	PUBLIC_FIREBASE_PROJECT_ID,
+	PUBLIC_FIREBASE_STORAGE_BUCKET
+} from '$env/static/public';
 
 // This gives `self` the correct Service Worker types
 const self = /** @type {ServiceWorkerGlobalScope} */ (/** @type {unknown} */ (globalThis.self));
 
 // Create a unique cache name for this deployment version
-const CACHE = `cache-${version}`;
+const CACHE_PREFIX = 'checklist-alug-';
+const CACHE = `${CACHE_PREFIX}${version}`;
 
 const ASSETS = [
-	...build, // SvelteKit compiled code and assets
-	...files  // Everything inside the static directory
+	...build,
+	'/manifest.json',
+	'/favicon.svg',
+	'/pwa-icon-192.png',
+	'/pwa-icon-512.png',
+	'/pwa-maskable-512.png'
 ];
 
 self.addEventListener('install', (event) => {
@@ -24,7 +37,6 @@ self.addEventListener('install', (event) => {
 		const cache = await caches.open(CACHE);
 		await cache.addAll(ASSETS);
 
-		// Eagerly fetch and cache the root page "/" (SPA Shell)
 		try {
 			const rootResponse = await fetch('/');
 			if (rootResponse.status === 200) {
@@ -42,16 +54,13 @@ self.addEventListener('activate', (event) => {
 	// Remove older version caches from disk
 	async function deleteOldCaches() {
 		for (const key of await caches.keys()) {
-			if (key !== CACHE) {
+			if (key.startsWith(CACHE_PREFIX) && key !== CACHE) {
 				await caches.delete(key);
 			}
 		}
 	}
 
-	// Claim any existing open clients immediately
-	self.clients.claim();
-
-	event.waitUntil(deleteOldCaches());
+	event.waitUntil(Promise.all([deleteOldCaches(), self.clients.claim()]));
 });
 
 self.addEventListener('fetch', (event) => {
@@ -61,6 +70,8 @@ self.addEventListener('fetch', (event) => {
 	async function respond() {
 		const url = new URL(event.request.url);
 		const cache = await caches.open(CACHE);
+		const isLocal = url.origin === self.location.origin;
+		if (!isLocal) return fetch(event.request);
 
 		// 1. Serve SvelteKit static / build assets from cache immediately
 		if (ASSETS.includes(url.pathname)) {
@@ -81,7 +92,7 @@ self.addEventListener('fetch', (event) => {
 				const response = await fetch(event.request);
 				if (response instanceof Response && response.status === 200) {
 					// Update the root cache for offline fallback
-					cache.put('/', response.clone());
+					await cache.put('/', response.clone());
 					return response;
 				}
 			} catch (err) {
@@ -103,13 +114,12 @@ self.addEventListener('fetch', (event) => {
 			}
 
 			// Avoid caching Firestore/Auth API endpoints, WebSockets, Chrome Extensions, etc.
-			const isLocal = url.origin === self.location.origin;
 			const isFirebaseOrAPI = url.hostname.includes('firebase') || 
 									url.pathname.startsWith('/__/auth') || 
 									url.pathname.startsWith('/api/');
 
 			if (response.status === 200 && isLocal && !isFirebaseOrAPI && !response.headers.get('cache-control')?.includes('no-store')) {
-				cache.put(event.request, response.clone());
+				await cache.put(event.request, response.clone());
 			}
 
 			return response;
@@ -134,36 +144,34 @@ self.addEventListener('message', (event) => {
 
 // === Firebase Cloud Messaging Background Setup ===
 const firebaseConfig = {
-  apiKey: "AIzaSyAGfpduRticKCZN4WzEVgWQKkIXVrsPbQs",
-  authDomain: "cadastro-alug---dev.firebaseapp.com",
-  projectId: "cadastro-alug---dev",
-  storageBucket: "cadastro-alug---dev.firebasestorage.app",
-  messagingSenderId: "591311088063",
-  appId: "1:591311088063:web:5901dedb8e17f556f8590a"
+	apiKey: PUBLIC_FIREBASE_API_KEY,
+	authDomain: PUBLIC_FIREBASE_AUTH_DOMAIN,
+	projectId: PUBLIC_FIREBASE_PROJECT_ID,
+	storageBucket: PUBLIC_FIREBASE_STORAGE_BUCKET,
+	messagingSenderId: PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+	appId: PUBLIC_FIREBASE_APP_ID
 };
 
-try {
-	const firebaseApp = initializeApp(firebaseConfig);
-	const messaging = getMessaging(firebaseApp);
-	
-	onBackgroundMessage(messaging, (payload) => {
-		console.log('[service-worker.js] Received background message ', payload);
-		
-		// If the payload contains a "notification" object, the Firebase SDK
-		// automatically displays it. We return here to prevent duplicates.
-		if (payload.notification) {
-			return;
-		}
+if (Object.values(firebaseConfig).every(Boolean)) {
+	try {
+		const firebaseApp = initializeApp(firebaseConfig);
+		const messaging = getMessaging(firebaseApp);
 
-		const notificationTitle = payload.data?.title || 'Checklist Alug';
-		const notificationOptions = {
-			body: payload.data?.body || '',
-			icon: '/pwa_icon_512.png',
-			data: payload.data
-		};
-	
-		self.registration.showNotification(notificationTitle, notificationOptions);
-	});
-} catch (error) {
-	console.error('Failed to initialize Firebase Messaging in Service Worker:', error);
+		onBackgroundMessage(messaging, async (payload) => {
+			// Notification payloads are displayed automatically; avoid a duplicate.
+			if (payload.notification) return;
+
+			const notificationTitle = payload.data?.title || 'Checklist Alug';
+			const notificationOptions = {
+				body: payload.data?.body || '',
+				icon: '/pwa-icon-192.png',
+				badge: '/pwa-icon-192.png',
+				data: payload.data
+			};
+
+			await self.registration.showNotification(notificationTitle, notificationOptions);
+		});
+	} catch {
+		console.warn('Push messaging is unavailable in this service worker environment.');
+	}
 }

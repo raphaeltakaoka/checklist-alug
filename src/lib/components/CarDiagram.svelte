@@ -1,6 +1,28 @@
 <script>
 	// Svelte 5 Runes for properties
 	let { activePart = $bindable(), partStates = {} } = $props();
+	let svgElement;
+
+	export function capture() {
+		if (!svgElement || typeof window === 'undefined') return null;
+		const clone = svgElement.cloneNode(true);
+		const originals = svgElement.querySelectorAll('path, rect, text, circle, line, polygon');
+		const clones = clone.querySelectorAll('path, rect, text, circle, line, polygon');
+		for (let index = 0; index < originals.length; index += 1) {
+			const style = window.getComputedStyle(originals[index]);
+			clones[index].setAttribute('fill', style.fill);
+			clones[index].setAttribute('stroke', style.stroke);
+			clones[index].setAttribute('stroke-width', style.strokeWidth || '1px');
+			clones[index].setAttribute('opacity', style.opacity || '1');
+			clones[index].removeAttribute('class');
+			clones[index].removeAttribute('role');
+			clones[index].removeAttribute('tabindex');
+		}
+		clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+		clone.setAttribute('style', 'background:transparent;max-width:100%;height:auto');
+		clone.removeAttribute('class');
+		return new Blob([new XMLSerializer().serializeToString(clone)], { type: 'image/svg+xml' });
+	}
 
 	function handleKeyDown(event, partId) {
 		if (event.key === "Enter" || event.key === " ") {
@@ -118,33 +140,33 @@
 	function getStatusColor(partId) {
 		const state = partStates[partId];
 		if (!state || state.status === "none") {
-			return "bg-slate-50  border-slate-200  hover:border-blue-500 :border-blue-500 hover:bg-slate-100 :bg-slate-700/80 text-slate-700 ";
+			return "bg-slate-50  border-slate-200  hover:border-blue-500  hover:bg-slate-100  text-slate-700 ";
 		}
 		if (state.status === "scratch") {
-			return "bg-amber-50  border-amber-300  text-amber-700  hover:bg-amber-100/80 :bg-amber-500/30";
+			return "bg-amber-50  border-amber-300  text-amber-700  hover:bg-amber-100/80 ";
 		}
 		if (state.status === "dent") {
-			return "bg-orange-50  border-orange-300  text-orange-700  hover:bg-orange-100/80 :bg-orange-500/30";
+			return "bg-orange-50  border-orange-300  text-orange-700  hover:bg-orange-100/80 ";
 		}
 		if (state.status === "crack") {
-			return "bg-purple-50  border-purple-300  text-purple-700  hover:bg-purple-100/80 :bg-purple-500/30";
+			return "bg-purple-50  border-purple-300  text-purple-700  hover:bg-purple-100/80 ";
 		}
 		if (state.status === "broken") {
-			return "bg-red-50  border-red-300  text-red-600  hover:bg-red-100/80 :bg-red-500/30 animate-pulse";
+			return "bg-red-50  border-red-300  text-red-600  hover:bg-red-100/80  animate-pulse";
 		}
 		if (state.status === "damaged") {
-			return "bg-indigo-50  border-indigo-300  text-indigo-700  hover:bg-indigo-100/80 :bg-indigo-500/30";
+			return "bg-indigo-50  border-indigo-300  text-indigo-700  hover:bg-indigo-100/80 ";
 		}
-		return "bg-slate-50  border-slate-200  text-slate-750 ";
+		return "bg-slate-50  border-slate-200  text-slate-700 ";
 	}
 
 	function getSVGPartColor(partId) {
 		const state = partStates[partId];
 		if (!state || state.status === "none") {
 			if (partId.endsWith("_wheel")) {
-				return "fill-slate-700  stroke-slate-400  hover:fill-slate-650 :fill-slate-900";
+				return "fill-slate-700  stroke-slate-400  hover:fill-slate-600 ";
 			}
-			return "fill-slate-100/60  stroke-slate-300  hover:fill-slate-200/50 :fill-slate-700/50";
+			return "fill-slate-100/60  stroke-slate-300  hover:fill-slate-200/50 ";
 		}
 		if (state.status === "scratch")
 			return "fill-amber-100/60  stroke-amber-500 ";
@@ -168,7 +190,7 @@
 		class="relative w-full max-w-[450px] aspect-2/5 p-0 flex items-center justify-center mx-auto"
 	>
 		<!-- Dynamic Interactive Car SVG Outline -->
-		<svg viewBox="20 0 160 400" class="w-full h-full select-none">
+		<svg bind:this={svgElement} viewBox="20 0 160 400" class="w-full h-full select-none">
 			<!-- Main Car Chassis Body Shadow -->
 			<rect
 				x="35"

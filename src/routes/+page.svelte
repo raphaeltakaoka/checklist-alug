@@ -1,12 +1,9 @@
 <script>
-  import { onMount } from "svelte";
   import { goto } from "$app/navigation";
   import logo from "$lib/assets/logo_alug_locadora.png";
   import { auth } from "$lib/firebase.js";
-  import {
-    signInWithEmailAndPassword,
-    createUserWithEmailAndPassword,
-  } from "firebase/auth";
+  import { signInWithEmailAndPassword } from "firebase/auth";
+  import { authState } from '$lib/auth.svelte.js';
 
   let email = $state("");
   let password = $state("");
@@ -15,8 +12,8 @@
   let hasError = $state(false);
   let errorMessage = $state("");
 
-  onMount(() => {
-    if (localStorage.getItem("authenticated") === "true") {
+  $effect(() => {
+    if (!authState.loading && authState.user) {
       goto("/dashboard");
     }
   });
@@ -41,58 +38,22 @@
       // Verify custom claims roles
       const idTokenResult = await user.getIdTokenResult(true);
       const roles = idTokenResult.claims?.roles;
-      const hasAnyPermission = roles && Object.values(roles).some(roleArray => Array.isArray(roleArray) && roleArray.length > 0);
+      const canUseChecklist =
+        (Array.isArray(roles?.operations) && roles.operations.includes('read')) ||
+        (Array.isArray(roles?.administrator) && roles.administrator.includes('read'));
 
-      if (!idTokenResult.claims || !hasAnyPermission) {
+      if (!canUseChecklist) {
         await auth.signOut();
         errorMessage =
-          "Acesso negado. Esta conta não possui permissões atribuídas no sistema.";
+          "Acesso negado. Esta conta não possui permissão de leitura do Checklist.";
         hasError = true;
         isLoading = false;
-        localStorage.removeItem("authenticated");
-        localStorage.removeItem("inspectorName");
         return;
       }
-
-      // Sync localStorage for compatibility
-      localStorage.setItem("authenticated", "true");
-      localStorage.setItem(
-        "inspectorName",
-        user.displayName || user.email.split("@")[0],
-      );
 
       goto("/dashboard");
     } catch (error) {
       console.error("Firebase Auth Error:", error.code, error.message);
-
-      // Automatically provision default demo credentials if they don't exist yet
-      if (
-        trimmedEmail === "test@test.com" &&
-        password === "123456" &&
-        (error.code === "auth/user-not-found" ||
-          error.code === "auth/invalid-credential")
-      ) {
-        try {
-          const userCredential = await createUserWithEmailAndPassword(
-            auth,
-            trimmedEmail,
-            password,
-          );
-          const { updateProfile } = await import("firebase/auth");
-          await updateProfile(userCredential.user, {
-            displayName: "Carlos Souza",
-          });
-
-          // Sync localStorage for compatibility
-          localStorage.setItem("authenticated", "true");
-          localStorage.setItem("inspectorName", "Carlos Souza");
-
-          goto("/dashboard");
-          return;
-        } catch (createError) {
-          console.error("Failed to auto-create demo user:", createError);
-        }
-      }
 
       // User-friendly error translations
       switch (error.code) {
@@ -183,7 +144,7 @@
       <!-- Error Box with transition -->
       {#if hasError}
         <div
-          class="bg-red-50 border border-red-100 rounded-2xl p-4 flex gap-3 items-start text-xs text-red-650 animate-shake"
+          class="bg-red-50 border border-red-100 rounded-2xl p-4 flex gap-3 items-start text-xs text-red-600 animate-shake"
         >
           <span class="text-lg leading-none">⚠️</span>
           <div>
@@ -198,7 +159,7 @@
         <!-- Email Input -->
         <div class="space-y-1.5">
           <label
-            class="block text-xs font-semibold text-slate-650"
+            class="block text-xs font-semibold text-slate-600"
             for="login-email"
           >
             Endereço de E-mail
@@ -225,7 +186,7 @@
         <div class="space-y-1.5">
           <div class="flex justify-between items-center">
             <label
-              class="block text-xs font-semibold text-slate-650"
+              class="block text-xs font-semibold text-slate-600"
               for="login-pwd"
             >
               Senha

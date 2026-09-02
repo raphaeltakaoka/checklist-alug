@@ -1,5 +1,7 @@
 <script>
 	import { compressImage } from "$lib/utils/imageCompressor.js";
+	import { onDestroy } from 'svelte';
+	import { mediaPreviewUrl, revokeMediaPreview } from '$lib/mediaPreview.js';
 
 	// Svelte 5 property bindings
 	let {
@@ -34,6 +36,7 @@
 
 	// Close modal
 	function close() {
+		for (const photo of photos) revokeMediaPreview(photo);
 		activePreviewIndex = null;
 		partId = null;
 	}
@@ -54,30 +57,32 @@
 		const files = e.target.files;
 		if (!files) return;
 
-		for (let i = 0; i < files.length; i++) {
+		for (let i = 0; i < files.length && photos.length < 6; i++) {
 			const file = files[i];
 			try {
-				const compressedBase64 = await compressImage(file, {
+				const compressedBlob = await compressImage(file, {
 					maxWidth: 1280,
 					maxHeight: 1280,
 					quality: 0.82,
 				});
-				photos = [...photos, compressedBase64];
+				photos = [...photos, compressedBlob];
 			} catch (err) {
-				console.error("Falha ao comprimir imagem, utilizando fallback original:", err);
-				const reader = new FileReader();
-				reader.onload = (event) => {
-					photos = [...photos, event.target.result];
-				};
-				reader.readAsDataURL(file);
+				console.error('Falha ao comprimir imagem:', err);
+				alert(err?.message || 'Não foi possível preparar a imagem.');
 			}
 		}
+		e.target.value = '';
 	}
 
 	// Delete a photo from the local state list
 	function deletePhoto(index) {
+		revokeMediaPreview(photos[index]);
 		photos = photos.filter((_, i) => i !== index);
 	}
+
+	onDestroy(() => {
+		for (const photo of photos) revokeMediaPreview(photo);
+	});
 </script>
 
 {#if partId}
@@ -111,7 +116,7 @@
 				<button
 					type="button"
 					onclick={close}
-					class="p-2 hover:bg-slate-100 :bg-slate-800 rounded-full text-slate-500 hover:text-slate-900 :text-slate-200 transition-colors cursor-pointer"
+					class="p-2 hover:bg-slate-100  rounded-full text-slate-500 hover:text-slate-900  transition-colors cursor-pointer"
 					aria-label="Close"
 				>
 					<svg
@@ -145,7 +150,7 @@
 						class="flex flex-wrap gap-2 sm:grid sm:grid-cols-6"
 						id="damage-status"
 					>
-						{#each [{ val: "none", label: "Sem Danos", color: "border-emerald-500 text-emerald-600 hover:bg-emerald-50  :bg-emerald-500/10", active: "bg-emerald-50  border-emerald-500 text-emerald-800 " }, { val: "scratch", label: "Risco", color: "border-amber-500 text-amber-600 hover:bg-amber-50  :bg-amber-500/10", active: "bg-amber-50  border-amber-500 text-amber-800 " }, { val: "dent", label: "Amassado", color: "border-orange-500 text-orange-600 hover:bg-orange-50  :bg-orange-500/10", active: "bg-orange-50  border-orange-500 text-orange-800 " }, { val: "crack", label: "Trincado", color: "border-purple-500 text-purple-600 hover:bg-purple-50  :bg-purple-500/10", active: "bg-purple-50  border-purple-500 text-purple-800 " }, { val: "broken", label: "Quebrado", color: "border-red-500 text-red-600 hover:bg-red-50  :bg-red-500/10", active: "bg-red-50  border-red-500 text-red-800 " }, { val: "damaged", label: "Danificado", color: "border-indigo-500 text-indigo-600 hover:bg-indigo-50  :bg-indigo-500/10", active: "bg-indigo-50  border-indigo-500 text-indigo-800 " }] as option (option.val)}
+						{#each [{ val: "none", label: "Sem Danos", color: "border-emerald-500 text-emerald-600 hover:bg-emerald-50  ", active: "bg-emerald-50  border-emerald-500 text-emerald-800 " }, { val: "scratch", label: "Risco", color: "border-amber-500 text-amber-600 hover:bg-amber-50  ", active: "bg-amber-50  border-amber-500 text-amber-800 " }, { val: "dent", label: "Amassado", color: "border-orange-500 text-orange-600 hover:bg-orange-50  ", active: "bg-orange-50  border-orange-500 text-orange-800 " }, { val: "crack", label: "Trincado", color: "border-purple-500 text-purple-600 hover:bg-purple-50  ", active: "bg-purple-50  border-purple-500 text-purple-800 " }, { val: "broken", label: "Quebrado", color: "border-red-500 text-red-600 hover:bg-red-50  ", active: "bg-red-50  border-red-500 text-red-800 " }, { val: "damaged", label: "Danificado", color: "border-indigo-500 text-indigo-600 hover:bg-indigo-50  ", active: "bg-indigo-50  border-indigo-500 text-indigo-800 " }] as option (option.val)}
 							<button
 								type="button"
 								onclick={() => (status = option.val)}
@@ -252,8 +257,9 @@
 								class="relative aspect-square bg-slate-100 border border-slate-200 rounded-2xl overflow-hidden group cursor-pointer text-left focus:outline-none focus:ring-2 focus:ring-blue-500"
 							>
 								<img
-									src={photo}
+									src={mediaPreviewUrl(photo)}
 									alt="Car Part state {i}"
+									loading="lazy"
 									class="w-full h-full object-cover"
 								/>
 
@@ -300,7 +306,7 @@
 							role="presentation"
 						>
 							<img
-								src={photos[activePreviewIndex]}
+								src={mediaPreviewUrl(photos[activePreviewIndex])}
 								alt="Large Preview"
 								class="max-h-[70vh] max-w-full object-contain rounded-2xl border border-slate-800 shadow-2xl"
 							/>
@@ -340,7 +346,7 @@
 						id="inspection-comments"
 						bind:value={comments}
 						placeholder="Descreva o dano"
-						class="w-full h-28 bg-slate-50 border border-slate-200 focus:border-blue-500 :border-blue-500 rounded-2xl p-4 text-slate-900 placeholder-slate-400 focus:ring-1 focus:ring-blue-500 outline-none resize-none transition-all text-sm"
+						class="w-full h-28 bg-slate-50 border border-slate-200 focus:border-blue-500  rounded-2xl p-4 text-slate-900 placeholder-slate-400 focus:ring-1 focus:ring-blue-500 outline-none resize-none transition-all text-sm"
 					></textarea>
 				</div>
 
@@ -363,7 +369,7 @@
 				<button
 					type="button"
 					onclick={close}
-					class="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 :bg-slate-700 text-slate-600 font-bold rounded-xl transition-all cursor-pointer text-sm border border-slate-200"
+					class="px-5 py-2.5 bg-slate-100 hover:bg-slate-200  text-slate-600 font-bold rounded-xl transition-all cursor-pointer text-sm border border-slate-200"
 				>
 					Cancelar
 				</button>

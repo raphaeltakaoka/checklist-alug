@@ -6,23 +6,28 @@
  * @param {Object} options Compression options.
  * @param {number} [options.maxWidth=1280] Maximum width of the output image.
  * @param {number} [options.maxHeight=1280] Maximum height of the output image.
- * @param {number} [options.quality=0.8] Compression quality (0.0 to 1.0) for JPEG.
- * @returns {Promise<string>} A promise that resolves with the compressed base64 JPEG data URL.
+ * @param {number} [options.quality=0.8] Initial JPEG quality (0.0 to 1.0).
+ * @param {number} [options.maxBytes=1500000] Maximum compressed byte size.
+ * @returns {Promise<Blob>} The bounded compressed JPEG blob.
  */
-export function compressImage(file, { maxWidth = 1600, maxHeight = 1600, quality = 0.85 } = {}) {
+export function compressImage(
+  file,
+  { maxWidth = 1600, maxHeight = 1600, quality = 0.85, maxBytes = 1_500_000 } = {},
+) {
   return new Promise((resolve, reject) => {
     if (!file || !file.type.startsWith('image/')) {
       reject(new Error('O arquivo fornecido não é uma imagem válida.'));
       return;
     }
+		if (file.size > 20_000_000) {
+			reject(new Error('A imagem original excede o limite de 20 MB.'));
+			return;
+		}
 
     const objectUrl = URL.createObjectURL(file);
     const img = new Image();
 
-    img.onload = () => {
-      // Clean up object URL memory immediately
-      URL.revokeObjectURL(objectUrl);
-
+		img.onload = async () => {
       let width = img.width;
       let height = img.height;
 
@@ -43,6 +48,7 @@ export function compressImage(file, { maxWidth = 1600, maxHeight = 1600, quality
 
       const ctx = canvas.getContext('2d');
       if (!ctx) {
+				URL.revokeObjectURL(objectUrl);
         reject(new Error('Não foi possível obter o contexto 2D do canvas.'));
         return;
       }
@@ -50,13 +56,26 @@ export function compressImage(file, { maxWidth = 1600, maxHeight = 1600, quality
       // Draw the image onto the canvas at new dimensions
       ctx.drawImage(img, 0, 0, width, height);
 
-      try {
-        // Export canvas content as a compressed JPEG data URL
-        const compressedDataUrl = canvas.toDataURL('image/jpeg', quality);
-        resolve(compressedDataUrl);
-      } catch (err) {
-        reject(err);
-      }
+			try {
+				let currentQuality = Math.min(0.92, Math.max(0.45, quality));
+				let output = null;
+				while (currentQuality >= 0.45) {
+					output = await new Promise((resolveBlob) =>
+						canvas.toBlob(resolveBlob, 'image/jpeg', currentQuality),
+					);
+					if (!output) throw new Error('Não foi possível codificar a imagem.');
+					if (output.size <= maxBytes) break;
+					currentQuality -= 0.1;
+				}
+				if (!output || output.size > maxBytes) {
+					throw new Error('A imagem não pôde ser reduzida ao tamanho permitido.');
+				}
+				resolve(output);
+			} catch (error) {
+				reject(error);
+			} finally {
+				URL.revokeObjectURL(objectUrl);
+			}
     };
 
     img.onerror = (err) => {

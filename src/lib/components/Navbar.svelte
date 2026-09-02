@@ -6,6 +6,7 @@
   import { fade, fly } from "svelte/transition";
   import { enablePushNotifications, disablePushNotifications, isPushSupported } from "$lib/notifications";
   import { onMount } from "svelte";
+  import { PUBLIC_FIREBASE_VAPID_KEY } from '$env/static/public';
 
   let { showDashboard = false } = $props();
   let isMenuOpen = $state(false);
@@ -22,8 +23,11 @@
   });
 
   async function handleToggleNotifications() {
-    const vapidKey =
-      "BM0LaoaLAb_qUByzxGgg_k-6U2E1qb-rh5gYI6KqMK2foIxyzwl9UjNVzPHuv4XH_WLEpRw_N0lVMGfU2swEfE4";
+		const vapidKey = PUBLIC_FIREBASE_VAPID_KEY;
+		if (!vapidKey) {
+			alert('Notificações não estão configuradas neste ambiente.');
+			return;
+		}
 
     const currentUser = auth.currentUser;
     if (!currentUser) {
@@ -32,14 +36,14 @@
     }
 
     if (notificationsEnabled) {
-      const success = await disablePushNotifications(currentUser.uid, vapidKey);
+      const success = await disablePushNotifications(vapidKey);
       if (success) {
         notificationsEnabled = false;
         localStorage.setItem("push_notifications_enabled", "false");
         alert("Notificações desativadas com sucesso!");
       }
     } else {
-      const token = await enablePushNotifications(currentUser.uid, vapidKey);
+      const token = await enablePushNotifications(vapidKey);
       if (token) {
         notificationsEnabled = true;
         localStorage.setItem("push_notifications_enabled", "true");
@@ -67,7 +71,7 @@
     <!-- Hamburger Menu Trigger -->
     <button
       onclick={() => (isMenuOpen = true)}
-      class="p-2 hover:bg-slate-100 :bg-slate-800 text-slate-600 hover:text-slate-900 :text-white rounded-xl transition-all cursor-pointer flex items-center justify-center border border-transparent hover:border-slate-200 :border-slate-700 shadow-2xs hover:shadow-xs"
+      class="p-2 hover:bg-slate-100  text-slate-600 hover:text-slate-900  rounded-xl transition-all cursor-pointer flex items-center justify-center border border-transparent hover:border-slate-200  shadow-2xs hover:shadow-xs"
       aria-label="Abrir menu"
     >
       <svg
@@ -87,7 +91,7 @@
     </button>
 
     <div
-      class="flex items-center justify-center p-1 bg-white rounded-lg border border-slate-150 shadow-xs"
+      class="flex items-center justify-center p-1 bg-white rounded-lg border border-slate-200 shadow-xs"
     >
       <img
         src={logo}
@@ -108,7 +112,7 @@
     {#if showDashboard}
       <button
         onclick={() => goto("/dashboard")}
-        class="px-3 sm:px-4 py-2 text-xs sm:text-sm bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-600 hover:text-slate-900 :text-white rounded-xl transition-all cursor-pointer font-medium"
+        class="px-3 sm:px-4 py-2 text-xs sm:text-sm bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-600 hover:text-slate-900  rounded-xl transition-all cursor-pointer font-medium"
       >
         Painel
       </button>
@@ -136,11 +140,11 @@
   >
     <!-- Drawer Header -->
     <div
-      class="p-5 border-b border-slate-150 flex items-center justify-between"
+      class="p-5 border-b border-slate-200 flex items-center justify-between"
     >
       <div class="flex items-center gap-3">
         <div
-          class="flex items-center justify-center p-1 bg-white rounded-lg border border-slate-150 shadow-xs"
+          class="flex items-center justify-center p-1 bg-white rounded-lg border border-slate-200 shadow-xs"
         >
           <img
             src={logo}
@@ -156,7 +160,7 @@
       <!-- Premium Close Button -->
       <button
         onclick={() => (isMenuOpen = false)}
-        class="p-2 hover:bg-slate-100 :bg-slate-800 text-slate-400 hover:text-slate-700 :text-slate-200 rounded-xl transition-all cursor-pointer flex items-center justify-center border border-transparent hover:border-slate-200 :border-slate-750"
+        class="p-2 hover:bg-slate-100  text-slate-400 hover:text-slate-700  rounded-xl transition-all cursor-pointer flex items-center justify-center border border-transparent hover:border-slate-200 "
         aria-label="Fechar menu"
       >
         <svg
@@ -182,7 +186,7 @@
           isMenuOpen = false;
           goto("/dashboard");
         }}
-        class="w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl text-slate-700 hover:text-primary bg-slate-50 hover:bg-slate-100 border border-slate-200/50 hover:border-slate-350 font-bold transition-all text-sm text-left cursor-pointer group active:scale-[0.98]"
+        class="w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl text-slate-700 hover:text-primary bg-slate-50 hover:bg-slate-100 border border-slate-200/50 hover:border-slate-300 font-bold transition-all text-sm text-left cursor-pointer group active:scale-[0.98]"
       >
         <span class="text-base group-hover:scale-110 transition-transform"
           >🏠</span
@@ -195,7 +199,7 @@
           isMenuOpen = false;
           goto("/dashboard/checklists");
         }}
-        class="w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl text-slate-700 hover:text-primary bg-slate-50 hover:bg-slate-100 border border-slate-200/50 hover:border-slate-350 font-bold transition-all text-sm text-left cursor-pointer group active:scale-[0.98]"
+        class="w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl text-slate-700 hover:text-primary bg-slate-50 hover:bg-slate-100 border border-slate-200/50 hover:border-slate-300 font-bold transition-all text-sm text-left cursor-pointer group active:scale-[0.98]"
       >
         <span class="text-base group-hover:scale-110 transition-transform"
           >📋</span
@@ -208,7 +212,7 @@
           isMenuOpen = false;
           goto("/dashboard/tarefas");
         }}
-        class="w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl text-slate-700 hover:text-primary bg-slate-50 hover:bg-slate-100 border border-slate-200/50 hover:border-slate-350 font-bold transition-all text-sm text-left cursor-pointer group active:scale-[0.98]"
+        class="w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl text-slate-700 hover:text-primary bg-slate-50 hover:bg-slate-100 border border-slate-200/50 hover:border-slate-300 font-bold transition-all text-sm text-left cursor-pointer group active:scale-[0.98]"
       >
         <span class="text-base group-hover:scale-110 transition-transform"
           >📌</span
@@ -244,10 +248,10 @@
     </nav>
 
     <!-- Bottom Exit Action -->
-    <div class="p-5 border-t border-slate-150 bg-slate-500/5">
+    <div class="p-5 border-t border-slate-200 bg-slate-500/5">
       <button
         onclick={handleSignOut}
-        class="w-full flex items-center justify-center gap-3 px-4 py-3.5 rounded-2xl text-red-600 hover:text-white bg-red-50 hover:bg-red-650 border border-red-100 hover:border-red-650 font-extrabold transition-all text-sm cursor-pointer group active:scale-[0.98] shadow-xs hover:shadow-md hover:shadow-red-500/10"
+        class="w-full flex items-center justify-center gap-3 px-4 py-3.5 rounded-2xl text-red-600 hover:text-white bg-red-50 hover:bg-red-600 border border-red-100 hover:border-red-600 font-extrabold transition-all text-sm cursor-pointer group active:scale-[0.98] shadow-xs hover:shadow-md hover:shadow-red-500/10"
       >
         <span class="text-base group-hover:scale-110 transition-transform"
           >🚪</span
