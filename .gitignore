@@ -24,3 +24,5 @@ vite.config.ts.timestamp-*
 
 # Private rollout artifacts (claims snapshots, deployment notes)
 /artifacts/private/
+.agents/hooks.json
+.cursor/hooks.json
