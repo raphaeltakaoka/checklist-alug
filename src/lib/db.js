@@ -262,17 +262,30 @@ export async function findLocalDeliveryInspection(ownerUid, licensePlate) {
   const cleanPlate = (licensePlate || "").replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
   if (cleanPlate.length !== 7) return [];
   const inspections = await getAllInspections(ownerUid, { includeMedia: true });
-  return inspections
+  const plateInspections = inspections.filter(ins => ins.licensePlate === cleanPlate);
+  const closedDeliveryIds = new Set(
+    plateInspections
+      .filter(
+        ins =>
+          ins.inspectionType === "Devolução" &&
+          ins.status === "completed" &&
+          typeof ins.deliveryChecklistId === "string" &&
+          ins.deliveryChecklistId.length > 0,
+      )
+      .map(ins => ins.deliveryChecklistId),
+  );
+
+  return plateInspections
     .filter(
       ins =>
-        ins.licensePlate === cleanPlate &&
         ins.inspectionType === "Entrega" &&
-        ins.status === "completed",
+        ins.status === "completed" &&
+        !closedDeliveryIds.has(ins.id),
     )
     .sort(
       (a, b) =>
-        new Date(b.inspectionDateTime || b.createdAt).getTime() -
-        new Date(a.inspectionDateTime || a.createdAt).getTime(),
+        new Date(b.inspectionDateTime || b.createdAt || 0).getTime() -
+        new Date(a.inspectionDateTime || a.createdAt || 0).getTime(),
     );
 }
 

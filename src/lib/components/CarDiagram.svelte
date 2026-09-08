@@ -69,9 +69,7 @@
   class="w-full flex flex-col lg:flex-row items-stretch lg:items-start justify-center gap-6 lg:gap-10 p-0 bg-transparent border-transparent shadow-none"
 >
   <!-- Visual Blueprint (SVG) -->
-  <div
-    class="relative w-full max-w-[220px] aspect-2/5 p-0 flex items-center justify-center mx-auto"
-  >
+  <div class="relative w-full max-w-55 aspect-2/5 p-0 flex items-center justify-center mx-auto">
     <!-- Dynamic Interactive Car SVG Outline -->
     <svg bind:this={svgElement} viewBox="20 0 160 400" class="w-full h-full select-none">
       <!-- Main Car Chassis Body Shadow -->

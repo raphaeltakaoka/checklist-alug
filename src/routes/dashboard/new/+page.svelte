@@ -9,6 +9,7 @@
   import { doc, getDoc } from "firebase/firestore";
   import {
     findLocalDeliveryInspection,
+    getAllInspections,
     getInspection,
     getStorageEstimate,
     requestPersistentStorage,
@@ -82,6 +83,7 @@
   let deliverySearchResults = $state([]);
   let deliveryPickerOpen = $state(false);
   let deliverySearchError = $state("");
+  let linkedDeliveryPlate = $state("");
 
   let eligible = $derived(report.licensePlate.length === 7 && !!report.clientName.trim());
   let photoCount = $derived(
@@ -158,6 +160,7 @@
       }
     }
     report.partStates = { ...report.partStates, ...preExistingParts };
+    linkedDeliveryPlate = delivery.licensePlate || report.licensePlate;
     deliveryPickerOpen = false;
     deliverySearchError = "";
   }
@@ -165,6 +168,7 @@
   function clearDelivery() {
     report.deliveryChecklistId = null;
     report.deliverySnapshot = null;
+    linkedDeliveryPlate = "";
     const remainingParts = {};
     for (const [partId, state] of Object.entries(report.partStates || {})) {
       if (state?.isNewDamage) {
@@ -201,13 +205,33 @@
           allMatches = [...localMatches, ...nonDuplicates];
         }
       }
-      deliverySearchResults = allMatches;
-      if (allMatches.length === 1 && !report.deliveryChecklistId) {
-        applyDelivery(allMatches[0]);
-      } else if (allMatches.length > 1) {
+      // Filter out any delivery that has been closed by a local completed return (e.g. pending sync)
+      const localAll = await getAllInspections(authState.user.uid).catch(() => []);
+      const localClosedIds = new Set(
+        localAll
+          .filter(
+            ins =>
+              ins.licensePlate === clean &&
+              ins.inspectionType === "Devolução" &&
+              ins.status === "completed" &&
+              ins.deliveryChecklistId,
+          )
+          .map(ins => ins.deliveryChecklistId),
+      );
+      const openDeliveries = allMatches.filter(d => !localClosedIds.has(d.id));
+
+      openDeliveries.sort(
+        (a, b) =>
+          new Date(b.inspectionDateTime || b.createdAt || 0).getTime() -
+          new Date(a.inspectionDateTime || a.createdAt || 0).getTime(),
+      );
+      deliverySearchResults = openDeliveries;
+      if (openDeliveries.length === 1 && !report.deliveryChecklistId) {
+        applyDelivery(openDeliveries[0]);
+      } else if (openDeliveries.length > 1) {
         deliveryPickerOpen = true;
-      } else if (allMatches.length === 0) {
-        deliverySearchError = `Nenhuma vistoria de entrega encontrada para a placa ${clean}.`;
+      } else if (openDeliveries.length === 0) {
+        deliverySearchError = `Nenhuma vistoria de entrega em aberto encontrada para a placa ${clean} (já encerrada ou inexistente).`;
       }
     } catch {
       deliverySearchError = "Não foi possível buscar as entregas. Verifique sua conexão.";
@@ -384,6 +408,9 @@
             ...draft,
             mileage: formatMileage(draft.mileage),
           };
+          if (report.deliveryChecklistId) {
+            linkedDeliveryPlate = report.licensePlate;
+          }
           saveState = "saved";
         } catch {
           loadError = "Não foi possível abrir o rascunho. Volte ao início e tente novamente.";
@@ -573,13 +600,15 @@
                         </p>
                       </div>
                       <div class="inline" style="gap:8px">
-                        <button
-                          type="button"
-                          class="btn"
-                          onclick={() => (deliveryPickerOpen = true)}
-                        >
-                          Trocar entrega
-                        </button>
+                        {#if deliverySearchResults.length > 1}
+                          <button
+                            type="button"
+                            class="btn"
+                            onclick={() => (deliveryPickerOpen = true)}
+                          >
+                            Trocar entrega
+                          </button>
+                        {/if}
                         <button type="button" class="text-action" onclick={clearDelivery}>
                           Desvincular
                         </button>
@@ -632,13 +661,20 @@
                     .replace(/[^a-zA-Z0-9]/g, "")
                     .toUpperCase()
                     .slice(0, 7);
-                  report.licensePlate = cleaned;
-                  if (
-                    report.inspectionType === "Devolução" &&
-                    cleaned.length === 7 &&
-                    !report.deliveryChecklistId
-                  ) {
-                    searchDelivery(cleaned);
+                  if (report.inspectionType === "Devolução") {
+                    if (
+                      report.deliveryChecklistId &&
+                      linkedDeliveryPlate &&
+                      cleaned !== linkedDeliveryPlate
+                    ) {
+                      clearDelivery();
+                    }
+                    report.licensePlate = cleaned;
+                    if (cleaned.length === 7 && !report.deliveryChecklistId) {
+                      searchDelivery(cleaned);
+                    }
+                  } else {
+                    report.licensePlate = cleaned;
                   }
                 }}
                 maxlength="7"
@@ -1015,7 +1051,7 @@
   >
     <div class="stack">
       <p class="muted">
-        Selecione a entrega correspondente para a placa <strong>{report.licensePlate}</strong>:
+        Vistorias de entrega em aberto para a placa <strong>{report.licensePlate}</strong>:
       </p>
       {#if deliverySearchResults.length}
         <div class="panel inspection-list">
@@ -1041,7 +1077,7 @@
           {/each}
         </div>
       {:else}
-        <p class="muted">Nenhuma entrega encontrada para esta placa.</p>
+        <p class="muted">Nenhuma entrega em aberto encontrada para esta placa.</p>
       {/if}
     </div>
     {#snippet footer()}
