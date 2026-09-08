@@ -1,11 +1,11 @@
 <script>
-	import './layout.css';
-	import favicon from '$lib/assets/favicon.svg';
-	import UpdateBanner from '$lib/components/UpdateBanner.svelte';
+  import "./layout.css";
+  import favicon from "$lib/assets/favicon.svg";
+  import AutoUpdater from "$lib/components/AutoUpdater.svelte";
 
-	let { children } = $props();
+  let { children } = $props();
 </script>
 
 <svelte:head><link rel="icon" href={favicon} /></svelte:head>
 {@render children()}
-<UpdateBanner />
+<AutoUpdater />
