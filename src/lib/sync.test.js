@@ -22,6 +22,25 @@ beforeEach(() => {
 });
 
 describe('inspection synchronization', () => {
+	it('sends version 3 contact and signer fields and preserves the server-resolved UID', async () => {
+		const report = { id: 'ins-contact', ownerUid: 'owner-a', schemaVersion: 3, contactId: 'doc-id', clientUid: 'old-uid', clientSignatureName: 'Representante', partStates: {}, signatureNameInitialized: true };
+		getInspection.mockResolvedValue(report);
+		authenticatedFetch.mockResolvedValue({ json: async () => ({ report: { ...report, clientUid: 'authoritative-uid' } }) });
+		expect(await syncInspectionToCloud(report)).toMatchObject({ clientUid: 'authoritative-uid' });
+		const payload = JSON.parse(authenticatedFetch.mock.calls[0][1].body);
+		expect(payload).toMatchObject({ schemaVersion: 3, contactId: 'doc-id', clientSignatureName: 'Representante' });
+		expect(payload.signatureNameInitialized).toBeUndefined();
+	});
+
+	it('keeps old completed queue entries on version 2 without the new requirements', async () => {
+		const report = { id: 'ins-legacy', ownerUid: 'owner-a', partStates: {} };
+		getInspection.mockResolvedValue(report);
+		authenticatedFetch.mockResolvedValue({ json: async () => ({ report }) });
+		await syncInspectionToCloud(report);
+		const payload = JSON.parse(authenticatedFetch.mock.calls[0][1].body);
+		expect(payload.schemaVersion).toBe(2);
+		expect(payload.contactId).toBeUndefined();
+	});
 	it('never runs more than two upload jobs concurrently and preserves result order', async () => {
 		let active = 0;
 		let peak = 0;

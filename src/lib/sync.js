@@ -126,13 +126,18 @@ async function uploadInspectionMedia(report) {
 
 function buildCloudReport(localReport) {
   return {
-    schemaVersion: 2,
+    schemaVersion: localReport.schemaVersion || 2,
     id: localReport.id,
     ownerUid: localReport.ownerUid,
     licensePlate: String(localReport.licensePlate || "").toUpperCase(),
     inspectionType: localReport.inspectionType,
     inspectorName: String(localReport.inspectorName || "").slice(0, 120),
     clientName: String(localReport.clientName || "").slice(0, 200),
+    ...(localReport.schemaVersion === 3 ? {
+      contactId: localReport.contactId,
+      clientUid: localReport.clientUid,
+      clientSignatureName: localReport.clientSignatureName,
+    } : {}),
     inspectionDateTime: dateToISOString(localReport.inspectionDateTime),
     clientLicensePhoto: localReport.clientLicensePhoto || "",
     clientLicensePhotoPath: localReport.clientLicensePhotoPath || "",

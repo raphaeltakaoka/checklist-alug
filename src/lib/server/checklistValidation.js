@@ -1,5 +1,6 @@
 import { ApiError } from "$lib/server/errors";
 import { countDamages } from "$lib/inspection.js";
+import { validateContactId } from '$lib/server/contacts';
 
 const PART_IDS = new Set([
   "front_bumper",
@@ -37,6 +38,9 @@ const ALLOWED_FIELDS = new Set([
   "inspectionType",
   "inspectorName",
   "clientName",
+  "contactId",
+  "clientUid",
+  "clientSignatureName",
   "inspectionDateTime",
   "clientLicensePhoto",
   "clientLicensePhotoPath",
@@ -194,7 +198,7 @@ export function validateChecklistPayload(payload, ownerUid) {
     fail("Invalid inspection.");
   if (Object.keys(payload).some(key => !ALLOWED_FIELDS.has(key)))
     fail("Unexpected inspection field.");
-  if (payload.schemaVersion !== 2 || payload.ownerUid !== ownerUid)
+  if (![2, 3].includes(payload.schemaVersion) || payload.ownerUid !== ownerUid)
     fail("Invalid inspection owner.");
   const id = string(payload.id, "inspection ID", 128);
   if (!/^[A-Za-z0-9_-]+$/.test(id)) fail("Invalid inspection ID.");
@@ -219,7 +223,7 @@ export function validateChecklistPayload(payload, ownerUid) {
       : 0;
 
   const report = {
-    schemaVersion: 2,
+    schemaVersion: payload.schemaVersion,
     id,
     ownerUid,
     licensePlate: string(payload.licensePlate, "license plate", 7).toUpperCase(),
@@ -259,12 +263,19 @@ export function validateChecklistPayload(payload, ownerUid) {
     synced: true,
   };
   if (report.licensePlate.length !== 7) fail("Invalid license plate.");
+  if (report.schemaVersion === 3) {
+    report.contactId = validateContactId(payload.contactId);
+    report.clientSignatureName = string(payload.clientSignatureName, 'signature name', 200).trim();
+    if (!report.clientSignatureName) fail('Informe o nome de quem assina.');
+    // The sync transaction resolves the authoritative UID from contacts.
+    report.clientUid = null;
+  }
   return report;
 }
 
 export function checklistSummary(report) {
   return {
-    schemaVersion: 2,
+    schemaVersion: report.schemaVersion || 2,
     id: report.id,
     ownerUid: report.ownerUid,
     licensePlate: report.licensePlate,

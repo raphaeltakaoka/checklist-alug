@@ -26,6 +26,12 @@ export function requirePermission(decodedToken, department, action) {
 	}
 }
 
+export function requireContactReadPermission(decodedToken) {
+	if (!hasPermission(decodedToken, 'operations', 'read') && !hasPermission(decodedToken, 'administrator', 'read')) {
+		throw new ApiError(403, 'Insufficient permissions.');
+	}
+}
+
 export function canAccessInspection(decodedToken, inspection, action) {
 	return (
 		hasPermission(decodedToken, 'administrator', action) ||

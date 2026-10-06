@@ -164,7 +164,7 @@ page.on('request', async (request) => {
 		export const query = (target, ...constraints) => ({ ...target, constraints });
 		export const where = (...args) => ({ where: args }); export const orderBy = (...args) => ({ orderBy: args }); export const limit = (n) => ({ limit: n }); export const startAfter = (cursor) => ({ cursor });
 		export const doc = (_, collection, id) => ({ collection, id });
-		export async function getDoc(ref) { return { exists: () => true, id: ref.id, data: () => ({ ...window.__fixtureReport, id: ref.id }) }; }
+		export async function getDoc(ref) { return { exists: () => true, id: ref.id, data: () => ({ ...window.__fixtureReport, id: ref.id, ...(ref.id === 'ui-linked-delivery' ? { contactId: 'contact-test', clientUid: 'historical-test-uid' } : {}) }) }; }
 		export async function getDocs(q) {
 			window.__fixtureReads.push(q); if(window.__offline) throw new Error('offline');
 			const more = q.constraints.some(c => c.cursor);
@@ -182,8 +182,24 @@ page.on('request', async (request) => {
 		requests.push({
 			method: request.method(),
 			path: url.pathname,
+			query: url.search,
 			body: request.postData() ? JSON.parse(request.postData()) : null
 		});
+		if (url.pathname === '/api/contacts/search') {
+			const term = url.searchParams.get('q');
+			if (term === 'fal') return json(request, { error: 'Falha de busca simulada.' }, 503);
+			if (term === 'zzz') return json(request, { contacts: [] });
+			if (term === 'joa') {
+				await new Promise(resolve => setTimeout(resolve, 600));
+				return json(request, { contacts: [{ id: 'stale-contact', uid: 'stale', nome: 'João Antigo' }] }).catch(() => {});
+			}
+			const contacts = term === 'mar' ? [
+				{ id: 'maria-one', uid: 'historical-maria', nome: 'Maria Costa', email: 'maria.one@example.test' },
+				{ id: 'maria-two', uid: 'maria-two', nome: 'Maria Costa', telefone: '5511999990000' }
+			] : [{ id: 'contact-test', uid: 'historical-test-uid', nome: 'Cliente de Teste', email: 'cliente@example.test' }];
+			return json(request, { contacts });
+		}
+		if (url.pathname.startsWith('/api/contacts/')) return json(request, { contact: { id: 'contact-test', uid: 'historical-test-uid', nome: 'Cliente de Teste' } });
 		if (url.pathname === '/api/checklists/sync') {
 			const fail = await page.evaluate(() => window.__failSync);
 			if (fail)
@@ -226,6 +242,8 @@ async function click(label, exact = true) {
 			element.textContent.trim()
 		);
 		if (exact ? value === label : value.includes(label)) {
+			// Keep the target clear of the fixed mobile header and action bar.
+			await button.evaluate(element => element.scrollIntoView({ block: 'center' }));
 			await button.click();
 			return;
 		}
@@ -241,6 +259,12 @@ async function waitText(value) {
 		{},
 		value
 	);
+}
+async function fillClient(value) {
+	await page.$eval('#client', (element, value) => {
+		element.value = value;
+		element.dispatchEvent(new Event('input', { bubbles: true }));
+	}, value);
 }
 async function screenshot(name, fullPage = false) {
 	await page.screenshot({ path: path.join(output, name + '.png'), fullPage });
@@ -305,7 +329,45 @@ try {
 	await waitText('Informe os 7 caracteres');
 	assert.equal(await page.evaluate(() => document.activeElement.id), 'plate');
 	await page.type('#plate', 'xyz9a87');
-	await page.type('#client', 'Cliente de Teste');
+	const lookups = () => requests.filter(r => r.path === '/api/contacts/search');
+	const initialLookups = lookups().length;
+	await page.type('#client', 'ma');
+	await new Promise(resolve => setTimeout(resolve, 400));
+	assert.equal(lookups().length, initialLookups, 'Two characters must not start a lookup');
+	await click('Continuar');
+	await waitText('Selecione um contato cadastrado');
+	await page.type('#client', 'r');
+	await waitText('maria.one@example.test');
+	assert((await text()).includes('5511999990000'), 'Homonyms expose identifying details');
+	await page.focus('#client');
+	await waitText('maria.one@example.test');
+	await page.keyboard.press('ArrowDown');
+	await page.keyboard.press('Enter');
+	await waitText('Contato vinculado');
+	assert.equal(await page.$eval('#client', el => el.readOnly), true);
+	await click('Desvincular contato');
+	assert.equal(await page.$eval('#client', el => el.value), '');
+	assert.equal(await page.$eval('#client', el => el.readOnly), false);
+	await fillClient('zzz');
+	await waitText('Nenhum contato encontrado');
+	await fillClient('fal');
+	await waitText('Não foi possível buscar contatos');
+	await page.evaluate(() => { window.__offline = true; });
+	const beforeOffline = lookups().length;
+	await fillClient('off');
+	await waitText('Conecte-se à internet para buscar');
+	assert.equal(lookups().length, beforeOffline);
+	await page.evaluate(() => { window.__offline = false; });
+	const slowRequest = page.waitForRequest(request => new URL(request.url()).searchParams.get('q') === 'joa');
+	await fillClient('joa');
+	await slowRequest;
+	await fillClient('Cliente de Teste');
+	await waitText('cliente@example.test');
+	await click('Cliente de Teste', false);
+	await waitText('Contato vinculado');
+	await new Promise(resolve => setTimeout(resolve, 650));
+	assert.equal(await page.$eval('#client', el => el.value), 'Cliente de Teste', 'A stale response cannot replace selection');
+	await screenshot('contact-linked-mobile');
 	await page.evaluate(() => {
 		window.__failSaves = true;
 	});
@@ -351,8 +413,26 @@ try {
 
 	await click('Continuar');
 	await waitText('Foto da CNH');
+	assert.equal(await page.$eval('#signature-name', el => el.value), 'Cliente de Teste');
+	await page.$eval('#signature-name', el => {
+		el.value = '   ';
+		el.dispatchEvent(new Event('input', { bubbles: true }));
+	});
 	await click('Concluir vistoria');
+	await waitText('Informe o nome de quem assina');
 	await waitText('Adicione uma foto da CNH');
+	await page.$eval('#signature-name', el => {
+		el.value = 'Representante de Teste';
+		el.dispatchEvent(new Event('input', { bubbles: true }));
+	});
+	await click('Detalhes', false);
+	await click('Desvincular contato');
+	await fillClient('Cliente de Teste');
+	await waitText('cliente@example.test');
+	await click('Cliente de Teste', false);
+	await click('Conclusão', false);
+	await page.waitForSelector('#signature-name');
+	assert.equal(await page.$eval('#signature-name', el => el.value), 'Representante de Teste', 'Changing contact must preserve signer edits');
 	const licenseFiles = await page.$$('input[type=file]');
 	await licenseFiles[1].uploadFile(imageFile);
 	await page.waitForSelector('img.upload-preview');
@@ -387,6 +467,10 @@ try {
 	);
 	assert.equal(completed.status, 'completed');
 	assert.equal(completed.syncState, 'queued');
+	assert.equal(completed.schemaVersion, 3);
+	assert.equal(completed.contactId, 'contact-test');
+	assert.equal(completed.clientUid, 'historical-test-uid');
+	assert.equal(completed.clientSignatureName, 'Representante de Teste');
 	await page.evaluate(() => {
 		window.__failSync = false;
 		window.__offline = false;
@@ -402,6 +486,14 @@ try {
 	);
 	assert.equal(finalRecord.synced, true);
 	assert.equal(finalRecord.status, 'synced');
+	assert.equal(finalRecord.clientSignatureName, 'Representante de Teste');
+	await page.goto(base + `/dashboard/new/${completed.id}`);
+	await waitText('Laudo de vistoria');
+	assert((await text()).includes('Representante de Teste'));
+	assert.equal(await page.$eval('img.report-signature', el => el.alt), 'Assinatura de Representante de Teste');
+	await page.emulateMediaType('print');
+	await page.pdf({ path: path.join(output, 'contact-signer-report-print.pdf'), format: 'A4', printBackground: true });
+	await page.emulateMediaType('screen');
 	console.log(
 		'PASS inspection: step validation, save error/retry, damage photo, CNH, signature, offline completion, real sync module against mocked storage/API'
 	);
@@ -419,6 +511,8 @@ try {
 	await page.click('a[href="/dashboard/new?id=ui-draft"]');
 	await waitText('Continuar vistoria');
 	assert.equal(await page.$eval('#plate', (el) => el.value), 'ABC1D23');
+	await click('Continuar');
+	await waitText('Selecione um contato cadastrado');
 	await click('Salvar e sair');
 	await waitText('Olá, Rafael.');
 	await page.goto(base + '/dashboard/new/ui-synced');
@@ -479,10 +573,33 @@ try {
 	console.log(
 		'PASS tasks: detail dialog, image preview, attachment link, nested Escape/focus handling'
 	);
+	await page.goto(base + '/dashboard/new?deliveryId=ui-linked-delivery');
+	await waitText('Contato vinculado');
+	assert.equal(await page.$eval('#client', el => el.value), 'Cliente de Teste');
+	assert(requests.some(r => r.path === '/api/contacts/contact-test'), 'Delivery contact is validated through the API');
+	await click('Salvar e sair');
+	await waitText('Olá, Rafael.');
+	const deliveryDraft = await page.evaluate(async () => (
+		await (await import('/src/lib/db.js')).getAllInspections('ui-test-inspector')
+	).find(r => r.deliveryChecklistId === 'ui-linked-delivery'));
+	assert.equal(deliveryDraft.clientUid, 'historical-test-uid');
+	await page.goto(base + `/dashboard/new?id=${deliveryDraft.id}`);
+	await waitText('Contato vinculado');
+	assert.equal(await page.$eval('#client', el => el.readOnly), true);
+	await click('Desvincular contato');
+	await click('Salvar e sair');
+	await waitText('Olá, Rafael.');
+	await page.goto(base + `/dashboard/new?id=${deliveryDraft.id}`);
+	await page.waitForSelector('#client');
+	assert.equal(await page.$eval('#client', el => el.value), '', 'Unlink survives draft reload');
+	const unlinked = await page.evaluate(async id => (await import('/src/lib/db.js')).getInspection('ui-test-inspector', id), deliveryDraft.id);
+	assert.equal(unlinked.contactId, null);
+	assert.equal(unlinked.clientUid, null);
+	console.log('PASS contacts: three-character threshold, keyboard and pointer selection, stale results, search failures, independent signer, delivery validation and draft restoration');
 	assert.deepEqual(errors, [], 'No browser runtime errors');
 	assert(
 		requests.some(
-			(r) => r.path === '/api/checklists/sync' && r.body?.schemaVersion === 2
+			(r) => r.path === '/api/checklists/sync' && r.body?.schemaVersion === 3 && r.body?.contactId === 'contact-test' && r.body?.clientSignatureName === 'Representante de Teste'
 		)
 	);
 	await writeFile(

@@ -37,6 +37,21 @@ function validPayload(overrides = {}) {
 }
 
 describe("checklist server validation", () => {
+  it('requires a contact and signer in version 3, leaving the UID for authoritative resolution', () => {
+    const payload = validPayload({ schemaVersion: 3, contactId: 'contact-id', clientUid: 'forged', clientSignatureName: ' Representante ' });
+    const report = validateChecklistPayload(payload, 'owner-a');
+    expect(report).toMatchObject({ schemaVersion: 3, contactId: 'contact-id', clientUid: null, clientSignatureName: 'Representante' });
+    for (const override of [{ contactId: null }, { contactId: '../unsafe' }, { clientSignatureName: '   ' }, { clientSignatureName: 'A'.repeat(201) }]) {
+      expect(() => validateChecklistPayload({ ...payload, ...override }, 'owner-a')).toThrow();
+    }
+  });
+
+  it('keeps completed version 2 reports compatible without inventing a contact or signer', () => {
+    const report = validateChecklistPayload(validPayload(), 'owner-a');
+    expect(report.schemaVersion).toBe(2);
+    expect(report.contactId).toBeUndefined();
+    expect(report.clientSignatureName).toBeUndefined();
+  });
   it("accepts and normalizes a bounded owner-scoped report", () => {
     const report = validateChecklistPayload(validPayload(), "owner-a");
     expect(report.licensePlate).toBe("ABC1D23");

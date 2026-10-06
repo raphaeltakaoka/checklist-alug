@@ -29,7 +29,9 @@
     formatMileage,
     normalizeCloudInspection,
   } from "$lib/inspection.js";
-  import { createInspectionWriter, inspectionErrors, firstErrorStep } from "$lib/inspectionForm.js";
+  import { createInspectionWriter, inspectionErrors, firstErrorStep, suggestSignatureName } from "$lib/inspectionForm.js";
+  import { linkInspectionContact, unlinkInspectionContact } from '$lib/contacts.js';
+  import ClientContactField from '$lib/components/ClientContactField.svelte';
   import Icon from "$lib/components/Icon.svelte";
   import Notice from "$lib/components/Notice.svelte";
   import Dialog from "$lib/components/Dialog.svelte";
@@ -37,12 +39,17 @@
   import DamageModal from "$lib/components/DamageModal.svelte";
   import SignaturePad from "$lib/components/SignaturePad.svelte";
   let report = $state({
+    schemaVersion: 3,
     id: "ins-" + crypto.randomUUID(),
     ownerUid: "",
     licensePlate: "",
     inspectionType: "Entrega",
     inspectorName: "",
     clientName: "",
+    contactId: null,
+    clientUid: null,
+    clientSignatureName: '',
+    signatureNameInitialized: false,
     inspectionDateTime: "",
     clientLicensePhoto: null,
     clientSignature: null,
@@ -84,8 +91,11 @@
   let deliveryPickerOpen = $state(false);
   let deliverySearchError = $state("");
   let linkedDeliveryPlate = $state("");
+  let draftStarted = $state(false);
+  let contactLinkVersion = 0;
+  let contactLinkError = $state('');
 
-  let eligible = $derived(report.licensePlate.length === 7 && !!report.clientName.trim());
+  let eligible = $derived(draftStarted || !!(report.licensePlate || report.clientName || report.contactId));
   let photoCount = $derived(
     Object.values(report.partStates).reduce((sum, part) => sum + (part.photos?.length || 0), 0),
   );
@@ -118,6 +128,33 @@
     };
   }
 
+  function selectContact(contact) {
+    contactLinkVersion++;
+    contactLinkError = '';
+    linkInspectionContact(report, contact);
+  }
+
+  function clearContact() {
+    contactLinkVersion++;
+    contactLinkError = '';
+    unlinkInspectionContact(report);
+  }
+
+  async function reuseDeliveryContact(delivery) {
+    if (!delivery.contactId || report.contactId) return;
+    const current = ++contactLinkVersion;
+    const previousName = report.clientName;
+    try {
+      const response = await authenticatedFetch(`/api/contacts/${encodeURIComponent(delivery.contactId)}`);
+      const { contact } = await response.json();
+      if (alive && current === contactLinkVersion && !report.contactId && report.clientName === previousName && report.deliveryChecklistId === delivery.id) {
+        selectContact(contact);
+      }
+    } catch {
+      if (alive && current === contactLinkVersion) contactLinkError = 'Busque e selecione o contato desta devolução para confirmar o vínculo.';
+    }
+  }
+
   function applyDelivery(delivery) {
     if (!delivery) return;
     report.deliveryChecklistId = delivery.id;
@@ -136,6 +173,7 @@
     if (delivery.clientName && !report.clientName) {
       report.clientName = delivery.clientName;
     }
+    reuseDeliveryContact(delivery);
     report.hasDocument = Boolean(delivery.hasDocument);
     report.hasChildSeat = Boolean(delivery.hasChildSeat);
     report.hasEToll = Boolean(delivery.hasEToll);
@@ -166,6 +204,8 @@
   }
 
   function clearDelivery() {
+    contactLinkVersion++;
+    contactLinkError = '';
     report.deliveryChecklistId = null;
     report.deliverySnapshot = null;
     linkedDeliveryPlate = "";
@@ -275,6 +315,7 @@
     }
     busy = true;
     try {
+      if (next === 4) suggestSignatureName(report);
       if (await persist()) {
         step = next;
         await tick();
@@ -406,12 +447,15 @@
           report = {
             ...report,
             ...draft,
+            schemaVersion: 3,
+            signatureNameInitialized: draft.signatureNameInitialized ?? !!draft.clientSignatureName,
             mileage: formatMileage(draft.mileage),
           };
           if (report.deliveryChecklistId) {
             linkedDeliveryPlate = report.licensePlate;
           }
           saveState = "saved";
+          draftStarted = true;
         } catch {
           loadError = "Não foi possível abrir o rascunho. Volte ao início e tente novamente.";
           return;
@@ -474,6 +518,7 @@
     window.addEventListener("pagehide", flush);
     return () => {
       alive = false;
+      contactLinkVersion++;
       writer.dispose();
       ui.saveAndExit = null;
       ui.inspectionBusy = false;
@@ -486,7 +531,8 @@
   $effect(() => {
     const current = $state.snapshot(report);
     if (!hydrated || allowLeave) return;
-    if (current.licensePlate.length === 7 && current.clientName.trim()) {
+    if (draftStarted || current.licensePlate || current.clientName || current.contactId) {
+      draftStarted = true;
       writer?.schedule(() => (eligible ? snapshot() : null));
     } else {
       writer?.cancelScheduled();
@@ -686,17 +732,14 @@
                 aria-describedby="plate-error"
               /><span id="plate-error" class="field-error">{errors.licensePlate || ""}</span>
             </div>
-            <div class="field">
-              <label for="client">Nome do cliente *</label><input
-                id="client"
-                bind:value={report.clientName}
-                maxlength="200"
-                autocomplete="name"
-                placeholder="Nome completo"
-                aria-invalid={!!errors.clientName}
-                aria-describedby="client-error"
-              /><span id="client-error" class="field-error">{errors.clientName || ""}</span>
-            </div>
+            <ClientContactField
+              bind:name={report.clientName}
+              contactId={report.contactId}
+              error={errors.clientName || ''}
+              onSelect={selectContact}
+              onClear={clearContact}
+            />
+            {#if contactLinkError}<p class="muted" role="status">{contactLinkError}</p>{/if}
             <div class="field">
               <label for="inspector">Inspetor *</label><input
                 id="inspector"
@@ -984,6 +1027,22 @@
               >
             </div>
             <div class="field">
+              <label for="signature-name">Nome *</label>
+              <input
+                id="signature-name"
+                bind:value={report.clientSignatureName}
+                maxlength="200"
+                required
+                autocomplete="name"
+                placeholder="Nome de quem assina"
+                aria-invalid={!!errors.clientSignatureName}
+                aria-describedby="signature-name-help signature-name-error"
+                oninput={() => { report.signatureNameInitialized = true; }}
+              />
+              <span id="signature-name-help" class="muted">Nome de quem assina, independente do contato vinculado.</span>
+              <span id="signature-name-error" class="field-error">{errors.clientSignatureName || ''}</span>
+            </div>
+            <div class="field">
               <span class="field-label">Assinatura do cliente *</span><SignaturePad
                 bind:signature={report.clientSignature}
                 invalid={!!errors.clientSignature}
@@ -1009,7 +1068,7 @@
                 ? "Falha ao salvar — tente novamente"
                 : eligible
                   ? "Alterações pendentes"
-                  : "Preencha placa e cliente para salvar"}</span
+                  : "Informe placa ou cliente para salvar"}</span
         ><button
           class="btn primary"
           disabled={busy || processing}
@@ -1030,7 +1089,7 @@
   />{/if}
 {#if discardOpen}<Dialog title="Sair sem salvar?" onclose={() => (discardOpen = false)}
     ><p>
-      Preencha a placa e o nome do cliente para salvar o rascunho. Se sair agora, estes dados serão
+      Informe uma placa ou um cliente para salvar o rascunho. Se sair agora, estes dados serão
       perdidos.
     </p>
     {#snippet footer()}<button class="btn" onclick={() => (discardOpen = false)}

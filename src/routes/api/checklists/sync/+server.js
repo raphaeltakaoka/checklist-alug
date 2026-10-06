@@ -14,6 +14,7 @@ import {
   validateChecklistPayload,
 } from "$lib/server/checklistValidation";
 import { readJson } from "$lib/server/requestValidation";
+import { contactSelection } from '$lib/server/contacts';
 
 export async function POST({ request }) {
   try {
@@ -43,9 +44,16 @@ export async function POST({ request }) {
           ? existingSummary.data()
           : null;
       if (existingData) assertInspectionAccess(decodedToken, existingData, "write");
+      if (existingData?.schemaVersion === 3 && payload.schemaVersion !== 3) {
+        throw new ApiError(400, 'A versão desta inspeção não pode ser reduzida.');
+      }
 
       const expectedOwnerUid = existingData?.ownerUid || decodedToken.uid;
       report = validateChecklistPayload(payload, expectedOwnerUid);
+      if (report.schemaVersion === 3) {
+        const contact = contactSelection(await transaction.get(adminDb.collection('contacts').doc(report.contactId)));
+        report.clientUid = contact.uid;
+      }
       const now = Timestamp.now();
       report.inspectionDateTime = Timestamp.fromDate(report.inspectionDateTime);
       report.createdAt = existingData?.createdAt || now;

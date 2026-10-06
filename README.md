@@ -29,6 +29,22 @@ The authoritative `firestore.rules`, `storage.rules`, `firestore.indexes.json`, 
 - Media is stored at `checklists/{ownerUid}/{inspectionId}/...` in Cloud Storage.
 - Local IndexedDB v2 keys all reports and Blobs by owner UID and inspection ID.
 
+New inspections use `schemaVersion: 3` and require a registered contact. `contactId` stores the
+`contacts` document ID, `clientUid` stores its authoritative `uid` (falling back to the document ID),
+and `clientSignatureName` stores the independent name of the signer. Version 2 completed reports
+remain readable and syncable; resumed drafts adopt version 3. No IndexedDB version upgrade is needed.
+
+`GET /api/contacts/search?q=...` searches the CRM's existing `searchTokens` after three normalized
+characters and returns up to ten name matches, with minimal identifying fields. It scans at most
+300 token matches per request; refine the query if a very broad term does not return the desired contact.
+`GET /api/contacts/{id}` validates a delivery's contact before reusing it. Both routes require
+operations or administrator read permission. Checklist sync resolves the UID inside the write
+transaction and rejects missing contacts. New contact searches require connectivity; an already
+linked draft can be completed offline and validated when it synchronizes.
+
+The shared Firestore rules continue to deny browser writes to checklists; these additions use the
+existing Admin SDK API authorization and contact search index, without deploying rules or indexes.
+
 Browser clients may read data allowed by the shared rules, but all checklist Firestore mutations go through authenticated SvelteKit APIs. Inspectors can access only their own reports; administrators can access all reports.
 
 ## Deployment
