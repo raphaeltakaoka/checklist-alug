@@ -3,13 +3,15 @@ import { validateChecklistPayload } from "./checklistValidation.js";
 
 function validPayload(overrides = {}) {
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     id: "ins-valid",
     ownerUid: "owner-a",
     licensePlate: "ABC1D23",
     inspectionType: "Entrega",
     inspectorName: "Inspetor",
     clientName: "Cliente",
+    contactId: 'contact-id',
+    clientSignatureName: 'Cliente',
     inspectionDateTime: "2026-08-31T12:00:00.000Z",
     clientLicensePhoto: "https://storage.example/license.jpg",
     clientLicensePhotoPath: "checklists/owner-a/ins-valid/license.jpg",
@@ -46,11 +48,8 @@ describe("checklist server validation", () => {
     }
   });
 
-  it('keeps completed version 2 reports compatible without inventing a contact or signer', () => {
-    const report = validateChecklistPayload(validPayload(), 'owner-a');
-    expect(report.schemaVersion).toBe(2);
-    expect(report.contactId).toBeUndefined();
-    expect(report.clientSignatureName).toBeUndefined();
+  it.each([undefined, 1, 2, 4])('rejects unsupported schema version %s', schemaVersion => {
+    expect(() => validateChecklistPayload(validPayload({ schemaVersion }), 'owner-a')).toThrow('Unsupported inspection schema version.');
   });
   it("accepts and normalizes a bounded owner-scoped report", () => {
     const report = validateChecklistPayload(validPayload(), "owner-a");

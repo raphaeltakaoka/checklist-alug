@@ -126,18 +126,16 @@ async function uploadInspectionMedia(report) {
 
 function buildCloudReport(localReport) {
   return {
-    schemaVersion: localReport.schemaVersion || 2,
+    schemaVersion: localReport.schemaVersion,
     id: localReport.id,
     ownerUid: localReport.ownerUid,
     licensePlate: String(localReport.licensePlate || "").toUpperCase(),
     inspectionType: localReport.inspectionType,
     inspectorName: String(localReport.inspectorName || "").slice(0, 120),
     clientName: String(localReport.clientName || "").slice(0, 200),
-    ...(localReport.schemaVersion === 3 ? {
-      contactId: localReport.contactId,
-      clientUid: localReport.clientUid,
-      clientSignatureName: localReport.clientSignatureName,
-    } : {}),
+    contactId: localReport.contactId,
+    clientUid: localReport.clientUid,
+    clientSignatureName: localReport.clientSignatureName,
     inspectionDateTime: dateToISOString(localReport.inspectionDateTime),
     clientLicensePhoto: localReport.clientLicensePhoto || "",
     clientLicensePhotoPath: localReport.clientLicensePhotoPath || "",
@@ -164,6 +162,7 @@ export async function syncInspectionToCloud(inspection) {
   if (!ownerUid || !inspection?.id) throw new Error("Inspection ownership is required for sync.");
   const hydrated = await getInspection(ownerUid, inspection.id);
   if (!hydrated) throw new Error("The local inspection could not be found.");
+  if (hydrated.schemaVersion !== 3) throw new Error('Unsupported inspection schema version.');
 
   await saveInspection({
     ...hydrated,

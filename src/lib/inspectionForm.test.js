@@ -6,8 +6,11 @@ import {
 } from './inspectionForm.js';
 
 const report = {
+	schemaVersion: 3,
 	licensePlate: 'ABC1D23',
 	clientName: 'Cliente Teste',
+	contactId: 'contact-test',
+	clientSignatureName: 'Cliente Teste',
 	inspectorName: 'Inspetor Teste',
 	inspectionDateTime: '2026-09-02T10:00',
 	mileage: '42.000',

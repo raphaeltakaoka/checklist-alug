@@ -443,12 +443,13 @@
             await goto(`/dashboard/new/${encodeURIComponent(draftId)}`);
             return;
           }
+          if (draft.schemaVersion !== 3) {
+            loadError = 'Este rascunho usa uma versão não suportada. Inicie uma nova vistoria.';
+            return;
+          }
           if (!alive) return;
           report = {
-            ...report,
             ...draft,
-            schemaVersion: 3,
-            signatureNameInitialized: draft.signatureNameInitialized ?? !!draft.clientSignatureName,
             mileage: formatMileage(draft.mileage),
           };
           if (report.deliveryChecklistId) {

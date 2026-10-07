@@ -5,7 +5,7 @@ export function inspectionErrors(report, throughStep = 1) {
 		errors.licensePlate = 'Informe os 7 caracteres da placa.';
 	if (!report.clientName?.trim() || report.clientName.length > 200)
 		errors.clientName = 'Informe o nome do cliente (até 200 caracteres).';
-	if (report.schemaVersion === 3 && !report.contactId)
+	if (!report.contactId)
 		errors.clientName = 'Selecione um contato cadastrado nos resultados da busca.';
 	if (!report.inspectorName?.trim() || report.inspectorName.length > 120)
 		errors.inspectorName = 'Informe o nome do inspetor (até 120 caracteres).';
@@ -27,7 +27,7 @@ export function inspectionErrors(report, throughStep = 1) {
 			errors.partStates = 'Use até 1.000 caracteres por descrição de dano.';
 	}
 	if (throughStep >= 4) {
-		if (report.schemaVersion === 3 && (!report.clientSignatureName?.trim() || report.clientSignatureName.length > 200))
+		if (!report.clientSignatureName?.trim() || report.clientSignatureName.length > 200)
 			errors.clientSignatureName = 'Informe o nome de quem assina (até 200 caracteres).';
 		if (!report.clientLicensePhoto)
 			errors.clientLicensePhoto = 'Adicione uma foto da CNH do cliente.';

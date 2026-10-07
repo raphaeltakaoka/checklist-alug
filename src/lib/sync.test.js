@@ -32,14 +32,12 @@ describe('inspection synchronization', () => {
 		expect(payload.signatureNameInitialized).toBeUndefined();
 	});
 
-	it('keeps old completed queue entries on version 2 without the new requirements', async () => {
-		const report = { id: 'ins-legacy', ownerUid: 'owner-a', partStates: {} };
+	it.each([undefined, 2, 4])('rejects unsupported schema %s before uploading or writing to the cloud', async schemaVersion => {
+		const report = { id: 'ins-unsupported', ownerUid: 'owner-a', schemaVersion, partStates: {} };
 		getInspection.mockResolvedValue(report);
-		authenticatedFetch.mockResolvedValue({ json: async () => ({ report }) });
-		await syncInspectionToCloud(report);
-		const payload = JSON.parse(authenticatedFetch.mock.calls[0][1].body);
-		expect(payload.schemaVersion).toBe(2);
-		expect(payload.contactId).toBeUndefined();
+		await expect(syncInspectionToCloud(report)).rejects.toThrow('Unsupported inspection schema version.');
+		expect(authenticatedFetch).not.toHaveBeenCalled();
+		expect(saveInspection).not.toHaveBeenCalled();
 	});
 	it('never runs more than two upload jobs concurrently and preserves result order', async () => {
 		let active = 0;
@@ -57,6 +55,7 @@ describe('inspection synchronization', () => {
 
 	it('records retry metadata without losing queued media after a failed API write', async () => {
 		const report = {
+			schemaVersion: 3,
 			id: 'ins-retry',
 			ownerUid: 'owner-a',
 			partStates: {},

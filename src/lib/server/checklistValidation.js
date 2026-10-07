@@ -198,7 +198,8 @@ export function validateChecklistPayload(payload, ownerUid) {
     fail("Invalid inspection.");
   if (Object.keys(payload).some(key => !ALLOWED_FIELDS.has(key)))
     fail("Unexpected inspection field.");
-  if (![2, 3].includes(payload.schemaVersion) || payload.ownerUid !== ownerUid)
+  if (payload.schemaVersion !== 3) fail('Unsupported inspection schema version.');
+  if (payload.ownerUid !== ownerUid)
     fail("Invalid inspection owner.");
   const id = string(payload.id, "inspection ID", 128);
   if (!/^[A-Za-z0-9_-]+$/.test(id)) fail("Invalid inspection ID.");
@@ -263,19 +264,17 @@ export function validateChecklistPayload(payload, ownerUid) {
     synced: true,
   };
   if (report.licensePlate.length !== 7) fail("Invalid license plate.");
-  if (report.schemaVersion === 3) {
-    report.contactId = validateContactId(payload.contactId);
-    report.clientSignatureName = string(payload.clientSignatureName, 'signature name', 200).trim();
-    if (!report.clientSignatureName) fail('Informe o nome de quem assina.');
-    // The sync transaction resolves the authoritative UID from contacts.
-    report.clientUid = null;
-  }
+  report.contactId = validateContactId(payload.contactId);
+  report.clientSignatureName = string(payload.clientSignatureName, 'signature name', 200).trim();
+  if (!report.clientSignatureName) fail('Informe o nome de quem assina.');
+  // The sync transaction resolves the authoritative UID from contacts.
+  report.clientUid = null;
   return report;
 }
 
 export function checklistSummary(report) {
   return {
-    schemaVersion: report.schemaVersion || 2,
+    schemaVersion: report.schemaVersion,
     id: report.id,
     ownerUid: report.ownerUid,
     licensePlate: report.licensePlate,

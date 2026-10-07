@@ -31,8 +31,8 @@ The authoritative `firestore.rules`, `storage.rules`, `firestore.indexes.json`, 
 
 New inspections use `schemaVersion: 3` and require a registered contact. `contactId` stores the
 `contacts` document ID, `clientUid` stores its authoritative `uid` (falling back to the document ID),
-and `clientSignatureName` stores the independent name of the signer. Version 2 completed reports
-remain readable and syncable; resumed drafts adopt version 3. No IndexedDB version upgrade is needed.
+and `clientSignatureName` stores the independent name of the signer. Only version 3 is supported;
+other schema versions are rejected without conversion. No IndexedDB version upgrade is needed.
 
 `GET /api/contacts/search?q=...` searches the CRM's existing `searchTokens` after three normalized
 characters and returns up to ten name matches, with minimal identifying fields. It scans at most

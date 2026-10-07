@@ -50,20 +50,17 @@ describe('contact validation during checklist sync', () => {
 		expect((await sync()).status).toBe(400);
 		expect(mocks.set).not.toHaveBeenCalled();
 	});
-	it('preserves ownership checks and rejects schema downgrades', async () => {
+	it('preserves ownership checks', async () => {
 		mocks.getAll.mockResolvedValue([document({ schemaVersion: 3, ownerUid: 'other-user' }, 'ins-valid'), absent]);
 		expect((await sync()).status).toBe(403);
-		mocks.getAll.mockResolvedValue([document({ schemaVersion: 3, ownerUid: 'owner-a' }, 'ins-valid'), absent]);
-		expect((await sync(payload({ schemaVersion: 2 }))).status).toBe(400);
 		expect(mocks.set).not.toHaveBeenCalled();
 	});
-	it('allows the old completed queue to synchronize without a contact', async () => {
-		const legacy = payload({ schemaVersion: 2 });
-		delete legacy.contactId;
-		delete legacy.clientUid;
-		delete legacy.clientSignatureName;
-		expect((await sync(legacy)).status).toBe(200);
+	it.each([undefined, 2, 4])('rejects unsupported schema %s even for a new document', async schemaVersion => {
+		const response = await sync(payload({ schemaVersion }));
+		expect(response.status).toBe(400);
+		expect(await response.json()).toEqual({ error: 'Unsupported inspection schema version.' });
 		expect(mocks.get).not.toHaveBeenCalled();
+		expect(mocks.set).not.toHaveBeenCalled();
 	});
 	it('rejects unauthorized or incomplete version 3 writes', async () => {
 		expect((await sync(payload(), '')).status).toBe(401);

@@ -320,10 +320,10 @@
           >{:else}<p class="muted">Não disponível.</p>{/if}
       </div>
       <div>
-        <h3>{inspection.clientSignatureName || inspection.clientName}</h3>
+        <h3>{inspection.clientSignatureName}</h3>
         {#if inspection.clientSignature}<img
             src={mediaPreviewUrl(inspection.clientSignature)}
-            alt={`Assinatura de ${inspection.clientSignatureName || inspection.clientName}`}
+            alt={`Assinatura de ${inspection.clientSignatureName}`}
             class="report-signature"
           />{:else}<p class="muted">Assinatura não disponível.</p>{/if}
         <p class="muted">Assinatura do cliente</p>

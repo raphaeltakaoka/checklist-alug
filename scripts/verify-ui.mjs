@@ -20,10 +20,15 @@ const imageFile = path.join(output, 'fixture-photo.png');
 await writeFile(imageFile, image);
 const ownerUid = 'ui-test-inspector';
 const fixtureReport = {
+	schemaVersion: 3,
 	id: 'ui-synced',
 	ownerUid,
 	licensePlate: 'DEF4G56',
 	clientName: 'Mariana Costa',
+	contactId: 'contact-fixture',
+	clientUid: 'fixture-contact-uid',
+	clientSignatureName: 'Mariana Costa',
+	signatureNameInitialized: true,
 	inspectorName: 'Rafael Teste',
 	inspectionType: 'Entrega',
 	inspectionDateTime: '2026-09-02T10:30',
@@ -298,6 +303,10 @@ try {
 			id: 'ui-draft',
 			licensePlate: 'ABC1D23',
 			clientName: 'João Oliveira',
+			contactId: null,
+			clientUid: null,
+			clientSignatureName: '',
+			signatureNameInitialized: false,
 			status: 'draft',
 			syncState: 'draft',
 			synced: false,

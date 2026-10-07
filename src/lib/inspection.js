@@ -140,7 +140,7 @@ export function normalizeCloudInspection(data, id = data?.id) {
 
 export function buildChecklistSummary(report) {
   return {
-    schemaVersion: report.schemaVersion || 2,
+    schemaVersion: report.schemaVersion,
     id: report.id,
     ownerUid: report.ownerUid,
     licensePlate: report.licensePlate,

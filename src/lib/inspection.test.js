@@ -13,6 +13,7 @@ import {
 describe("inspection helpers", () => {
   it("counts only actual damage states and builds lightweight summaries", () => {
     const report = {
+      schemaVersion: 3,
       id: "one",
       ownerUid: "owner",
       licensePlate: "ABC1D23",
