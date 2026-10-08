@@ -99,8 +99,13 @@
 	onDestroy(invalidate);
 </script>
 
+<svelte:document onpointerdown={event => {
+	if (!container?.contains(event.target)) open = false;
+}} />
+
 <div class="field lookup-field" bind:this={container} onfocusout={event => {
-	if (!container?.contains(event.relatedTarget)) open = false;
+	// A mobile tap can blur the input with no next focus target before its click.
+	if (event.relatedTarget && !container?.contains(event.relatedTarget)) open = false;
 }}>
 	<label for={config.id}>{config.label}</label>
 	<input

@@ -110,7 +110,7 @@ await page.evaluateOnNewDocument(
 		window.__failSaves = false;
 		window.__failSync = true;
 		window.__fixtureReads = [];
-		window.__offline = sessionStorage.getItem('ui-offline') === 'true';
+		window.__offline = location.protocol === 'http:' && sessionStorage.getItem('ui-offline') === 'true';
 		Object.defineProperty(navigator, 'onLine', {
 			configurable: true,
 			get: () => !window.__offline
@@ -273,6 +273,25 @@ async function click(label, exact = true) {
 	}
 	throw new Error(`Control not found: ${label}`);
 }
+async function tapSuggestionAfterBlur(inputId, optionIndex = 0) {
+	await page.focus(`#${inputId}`);
+	const selector = `#${inputId}-option-${optionIndex}`;
+	await page.waitForSelector(selector, { visible: true });
+	const option = await page.$(selector);
+	await option.evaluate(element => element.scrollIntoView({ block: 'center' }));
+	// Mobile browsers may dismiss the keyboard with no next focus target before
+	// dispatching the suggestion click. Reproduce that native focusout sequence.
+	const blurredWithoutTarget = await page.$eval(`#${inputId}`, element => {
+		let withoutTarget = false;
+		element.addEventListener('focusout', event => { withoutTarget = event.relatedTarget === null; }, { once: true });
+		element.blur();
+		return withoutTarget;
+	});
+	assert.equal(blurredWithoutTarget, true, 'Exercise focusout with a null relatedTarget');
+	assert.equal(await option.evaluate(element => element.getClientRects().length > 0), true,
+		`${inputId}: suggestions must remain visible until the tap can select`);
+	await option.tap();
+}
 async function waitText(value) {
 	await page.waitForFunction(
 		(s) =>
@@ -310,6 +329,7 @@ async function noOverflow() {
 }
 async function captureAt(width, name) {
 	await page.setViewport({
+		...page.viewport(),
 		width,
 		height: width < 700 ? 844 : 900,
 		deviceScaleFactor: 1
@@ -318,7 +338,7 @@ async function captureAt(width, name) {
 	await screenshot(name);
 }
 try {
-	await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 1 });
+	await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 1, isMobile: true, hasTouch: true });
 	await page.goto(base + '/dashboard');
 	await waitText('Nenhuma vistoria em andamento');
 	await page.evaluate(async (report) => {
@@ -384,6 +404,13 @@ try {
 	await click('Desvincular veículo');
 	assert.equal(await page.$eval('#plate', el => el.value), '');
 	assert.equal(await page.$eval('#plate', el => el.readOnly), false);
+	await fillPlate('xyz');
+	await tapSuggestionAfterBlur('plate');
+	await waitText('Veículo vinculado');
+	assert.equal(await page.$eval('#plate', el => el.value), 'XYZ9A87', 'A mobile tap fills the entire plate');
+	assert.equal(await page.$eval('#plate', el => el.readOnly), true);
+	await click('Desvincular veículo');
+
 	await fillPlate('zzz');
 	await waitText('Nenhum veículo encontrado');
 	await fillPlate('fal');
@@ -399,7 +426,7 @@ try {
 	await slowCar;
 	await fillPlate('xyz9a87');
 	await waitText('Toyota Corolla');
-	await click('XYZ9A87', false);
+	await tapSuggestionAfterBlur('plate');
 	await waitText('Veículo vinculado');
 	await new Promise(resolve => setTimeout(resolve, 650));
 	assert.equal(await page.$eval('#plate', el => el.value), 'XYZ9A87', 'Stale car responses cannot replace the selection');
@@ -424,6 +451,29 @@ try {
 	await click('Desvincular contato');
 	assert.equal(await page.$eval('#client', el => el.value), '');
 	assert.equal(await page.$eval('#client', el => el.readOnly), false);
+	await fillClient('mar');
+	await page.focus('#client');
+	await waitText('maria.one@example.test');
+	await page.tap('#inspector');
+	assert.equal(await page.$eval('#client-options', el => el.hidden), true, 'Tapping outside closes suggestions');
+	await tapSuggestionAfterBlur('client', 1);
+	await waitText('Contato vinculado');
+	assert.equal(await page.$eval('#client', el => el.value), 'Maria Costa', 'A mobile tap fills the entire client name');
+	assert.equal(await page.$eval('#client', el => el.readOnly), true);
+	await click('Salvar e sair');
+	await waitText('Olá, Rafael.');
+	const mobileDraft = await page.evaluate(async () => (
+		await (await import('/src/lib/db.js')).getAllInspections('ui-test-inspector')
+	).find(report => report.clientName === 'Maria Costa'));
+	assert.equal(mobileDraft.carId, 'car-test', 'The tapped plate links the car in the saved draft');
+	assert.equal(mobileDraft.contactId, 'maria-two', 'The tapped name links the selected contact in the saved draft');
+	await page.goto(base + `/dashboard/new?id=${mobileDraft.id}`);
+	await waitText('Contato vinculado');
+	assert.equal(await page.$eval('#plate', el => el.value), 'XYZ9A87');
+	assert.equal(await page.$eval('#client', el => el.value), 'Maria Costa');
+	await click('Desvincular contato');
+	console.log('PASS mobile selection: native touch after focus loss links complete plate/name, closes outside, saves IDs and restores the draft');
+
 	await fillClient('zzz');
 	await waitText('Nenhum contato encontrado');
 	await fillClient('fal');
