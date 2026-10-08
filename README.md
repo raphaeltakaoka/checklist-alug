@@ -29,6 +29,12 @@ The authoritative `firestore.rules`, `storage.rules`, `firestore.indexes.json`, 
 - Media is stored at `checklists/{ownerUid}/{inspectionId}/...` in Cloud Storage.
 - Local IndexedDB v2 keys all reports and Blobs by owner UID and inspection ID.
 
+Local storage keeps drafts and completed inspections awaiting synchronization. After
+the cloud confirms a successful sync, the local report and its media are deleted.
+Failed uploads stay on the device for retry. Previously retained synced copies are
+removed when the owner reads local history or opens a local report. Synced reports
+remain available through the cloud history; photo edits do not recreate local copies.
+
 New inspections use `schemaVersion: 3` and require a registered contact and vehicle.
 `carId` stores the `cars` document ID. `contactId` stores the
 `contacts` document ID, `clientUid` stores its authoritative `uid` (falling back to the document ID),

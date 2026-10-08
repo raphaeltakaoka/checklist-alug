@@ -1,5 +1,5 @@
 import { storage } from "$lib/firebaseStorage.js";
-import { getInspection, saveInspection } from "$lib/db.js";
+import { deleteInspection, getInspection, saveInspection } from '$lib/db.js';
 import { getDownloadURL, ref, uploadBytesResumable } from "firebase/storage";
 import { authenticatedFetch } from "$lib/api.js";
 
@@ -192,7 +192,7 @@ export async function syncInspectionToCloud(inspection) {
       retryCount: 0,
       lastSyncError: "",
     };
-    await saveInspection(syncedReport);
+    await deleteInspection(ownerUid, inspection.id);
     return syncedReport;
   } catch (error) {
     await saveInspection({

@@ -598,9 +598,21 @@ try {
 	assert.equal(completed.contactId, 'contact-test');
 	assert.equal(completed.clientUid, 'historical-test-uid');
 	assert.equal(completed.clientSignatureName, 'Representante de Teste');
+	await page.evaluate(() => { sessionStorage.setItem('ui-offline', 'true'); });
+	await page.goto(base + `/dashboard/new/${completed.id}`);
+	await waitText('Laudo de vistoria');
+	assert((await text()).includes('Representante de Teste'));
+	assert.equal(await page.$eval('img.report-signature', el => el.alt), 'Assinatura de Representante de Teste');
+	await page.emulateMediaType('print');
+	await page.pdf({ path: path.join(output, 'contact-signer-report-print.pdf'), format: 'A4', printBackground: true });
+	await page.emulateMediaType('screen');
+	await page.evaluate(() => { window.__offline = true; });
+	await page.goto(base + '/dashboard');
+	await waitText('Você está offline');
 	await page.evaluate(() => {
 		window.__failSync = false;
 		window.__offline = false;
+		sessionStorage.removeItem('ui-offline');
 		dispatchEvent(new Event('online'));
 	});
 	await waitText('Nenhum envio pendente');
@@ -611,17 +623,19 @@ try {
 			).getAllInspections('ui-test-inspector')
 		).find((r) => r.licensePlate === 'XYZ9A87')
 	);
-	assert.equal(finalRecord.carId, 'car-test');
-	assert.equal(finalRecord.synced, true);
-	assert.equal(finalRecord.status, 'synced');
-	assert.equal(finalRecord.clientSignatureName, 'Representante de Teste');
+	assert.equal(finalRecord, undefined, 'A successful sync removes the local report');
+	const remainingMedia = await page.evaluate(async id => {
+		const { openDB } = await import('/src/lib/db.js');
+		const database = await openDB();
+		return new Promise((resolve, reject) => {
+			const request = database.transaction('inspectionMedia', 'readonly').objectStore('inspectionMedia').index('ownerInspection').getAll(['ui-test-inspector', id]);
+			request.onsuccess = () => resolve(request.result.length);
+			request.onerror = () => reject(request.error);
+		});
+	}, completed.id);
+	assert.equal(remainingMedia, 0, 'A successful sync removes all local media');
 	await page.goto(base + `/dashboard/new/${completed.id}`);
-	await waitText('Laudo de vistoria');
-	assert((await text()).includes('Representante de Teste'));
-	assert.equal(await page.$eval('img.report-signature', el => el.alt), 'Assinatura de Representante de Teste');
-	await page.emulateMediaType('print');
-	await page.pdf({ path: path.join(output, 'contact-signer-report-print.pdf'), format: 'A4', printBackground: true });
-	await page.emulateMediaType('screen');
+	await waitText('Vistoria não encontrada');
 	console.log(
 		'PASS inspection: step validation, save error/retry, damage photo, CNH, signature, offline completion, real sync module against mocked storage/API'
 	);
@@ -634,7 +648,8 @@ try {
 	await waitText('ZZZ9Z99');
 	await click('Neste dispositivo');
 	await click('Limpar filtros');
-	await waitText('XYZ9A87');
+	await waitText('ABC1D23');
+	assert(!(await text()).includes('XYZ9A87'), 'Synced reports disappear from device history');
 	await captureAt(390, 'history-local-mobile');
 	await page.click('a[href="/dashboard/new?id=ui-draft"]');
 	await waitText('Continuar vistoria');
@@ -643,7 +658,11 @@ try {
 	await waitText('Selecione um contato cadastrado');
 	await click('Salvar e sair');
 	await waitText('Olá, Rafael.');
-	await page.goto(base + '/dashboard/new/ui-synced');
+	await page.evaluate(async report => {
+		const { saveInspection } = await import('/src/lib/db.js');
+		await saveInspection({ ...report, id: 'ui-local-report', synced: false, syncState: 'queued' });
+	}, fixtureReport);
+	await page.goto(base + '/dashboard/new/ui-local-report');
 	await waitText('Laudo de vistoria');
 	await captureAt(390, 'report-mobile');
 	await page.emulateMediaType('print');
@@ -667,6 +686,14 @@ try {
 	await click('Cancelar');
 	await page.goto(base + '/dashboard/checklists/cloud-0');
 	await waitText('Laudo de vistoria');
+	await page.click('button[aria-label="Ampliar foto 1 de Capô"]');
+	await click('Excluir foto');
+	await click('Excluir');
+	await page.waitForFunction(() => !document.querySelector('dialog'));
+	assert.equal(await page.evaluate(async () => {
+		const { getInspection } = await import('/src/lib/db.js');
+		return getInspection('ui-test-inspector', 'cloud-0');
+	}), null, 'Editing a cloud report does not recreate an offline copy');
 	await noOverflow();
 	console.log(
 		'PASS history: loaded-record search, pagination, local history, resume; shared local/cloud report, photo deletion and printable PDF'

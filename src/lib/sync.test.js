@@ -2,10 +2,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const getInspection = vi.fn();
 const saveInspection = vi.fn();
+const deleteInspection = vi.fn();
 const authenticatedFetch = vi.fn();
 
 vi.mock('$lib/firebaseStorage.js', () => ({ storage: {} }));
-vi.mock('$lib/db.js', () => ({ getInspection, saveInspection }));
+vi.mock('$lib/db.js', () => ({ deleteInspection, getInspection, saveInspection }));
 vi.mock('$lib/api.js', () => ({ authenticatedFetch }));
 vi.mock('firebase/storage', () => ({
 	getDownloadURL: vi.fn(),
@@ -18,6 +19,7 @@ const { __syncTestUtils, syncInspectionToCloud } = await import('./sync.js');
 beforeEach(() => {
 	getInspection.mockReset();
 	saveInspection.mockReset().mockResolvedValue(undefined);
+	deleteInspection.mockReset().mockResolvedValue(undefined);
 	authenticatedFetch.mockReset();
 });
 
@@ -30,6 +32,8 @@ describe('inspection synchronization', () => {
 		const payload = JSON.parse(authenticatedFetch.mock.calls[0][1].body);
 		expect(payload).toMatchObject({ schemaVersion: 3, carId: 'car-id', contactId: 'doc-id', clientSignatureName: 'Representante' });
 		expect(payload.signatureNameInitialized).toBeUndefined();
+		expect(deleteInspection).toHaveBeenCalledExactlyOnceWith('owner-a', report.id);
+		expect(saveInspection).toHaveBeenCalledTimes(1);
 	});
 
 	it.each([undefined, 2, 4])('rejects unsupported schema %s before uploading or writing to the cloud', async schemaVersion => {
@@ -38,7 +42,25 @@ describe('inspection synchronization', () => {
 		await expect(syncInspectionToCloud(report)).rejects.toThrow('Unsupported inspection schema version.');
 		expect(authenticatedFetch).not.toHaveBeenCalled();
 		expect(saveInspection).not.toHaveBeenCalled();
+		expect(deleteInspection).not.toHaveBeenCalled();
 	});
+
+	it('waits for cloud confirmation before deleting the local report', async () => {
+		const report = { id: 'ins-confirmation', ownerUid: 'owner-a', schemaVersion: 3, partStates: {} };
+		getInspection.mockResolvedValue(report);
+		let confirm;
+		let responseRead;
+		const readingResponse = new Promise(resolve => { responseRead = resolve; });
+		const confirmation = new Promise(resolve => { confirm = resolve; });
+		authenticatedFetch.mockResolvedValue({ json: () => { responseRead(); return confirmation; } });
+		const syncing = syncInspectionToCloud(report);
+		await readingResponse;
+		expect(deleteInspection).not.toHaveBeenCalled();
+		confirm({ report });
+		await syncing;
+		expect(deleteInspection).toHaveBeenCalledExactlyOnceWith('owner-a', report.id);
+	});
+
 	it('never runs more than two upload jobs concurrently and preserves result order', async () => {
 		let active = 0;
 		let peak = 0;
@@ -66,6 +88,7 @@ describe('inspection synchronization', () => {
 		authenticatedFetch.mockRejectedValue(new Error('network unavailable'));
 
 		await expect(syncInspectionToCloud(report)).rejects.toThrow('network unavailable');
+		expect(deleteInspection).not.toHaveBeenCalled();
 		expect(saveInspection).toHaveBeenLastCalledWith(
 			expect.objectContaining({
 				id: 'ins-retry',
@@ -76,6 +99,18 @@ describe('inspection synchronization', () => {
 				lastSyncError: 'network unavailable'
 			})
 		);
+	});
+
+	it('keeps a retryable record when local cleanup fails after the cloud write', async () => {
+		const report = { id: 'ins-cleanup', ownerUid: 'owner-a', schemaVersion: 3, partStates: {} };
+		getInspection.mockResolvedValue(report);
+		authenticatedFetch.mockResolvedValue({ json: async () => ({ report }) });
+		deleteInspection.mockRejectedValue(new Error('local cleanup failed'));
+
+		await expect(syncInspectionToCloud(report)).rejects.toThrow('local cleanup failed');
+		expect(saveInspection).toHaveBeenLastCalledWith(expect.objectContaining({
+			status: 'completed', synced: false, syncState: 'error', lastSyncError: 'local cleanup failed'
+		}));
 	});
 
 	it('bounds part photos and normalizes unsafe comment values', () => {

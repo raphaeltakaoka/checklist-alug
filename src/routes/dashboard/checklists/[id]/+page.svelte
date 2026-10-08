@@ -3,11 +3,9 @@
 	import { page } from '$app/state';
 	import { db } from '$lib/firebaseDb.js';
 	import { doc, getDoc } from 'firebase/firestore';
-	import { saveInspection } from '$lib/db.js';
 	import { authState } from '$lib/auth.svelte.js';
 	import { authenticatedFetch } from '$lib/api.js';
 	import { normalizeCloudInspection } from '$lib/inspection.js';
-	import { notify } from '$lib/ui.svelte.js';
 	import InspectionReport from '$lib/components/InspectionReport.svelte';
 	import Notice from '$lib/components/Notice.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
@@ -60,14 +58,6 @@
 			...inspection,
 			partStates: (await response.json()).partStates
 		};
-		// Never cache another inspector's report under the current user's offline account.
-		if (inspection.ownerUid === authState.user.uid)
-			await saveInspection($state.snapshot(inspection)).catch(() =>
-				notify(
-					'Foto excluída. Não foi possível atualizar a cópia deste dispositivo.',
-					'error'
-				)
-			);
 	}
 </script>
 

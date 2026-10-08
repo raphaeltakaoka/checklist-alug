@@ -25,6 +25,16 @@ function report(ownerUid, id, overrides = {}) {
   };
 }
 
+async function readStore(name) {
+  const database = await openDB();
+  return new Promise((resolve, reject) => {
+    const transaction = database.transaction(name, 'readonly');
+    const request = transaction.objectStore(name).getAll();
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
 describe("owner-scoped inspection database", () => {
   it('preserves vehicle, contact identity and an independent signer through an offline draft reload', async () => {
     const fields = { schemaVersion: 3, carId: 'car-id', licensePlate: 'ABC1D23', contactId: 'doc-id', clientUid: 'historical-uid', clientName: 'Maria', clientSignatureName: 'Representante', signatureNameInitialized: true };
@@ -136,19 +146,41 @@ describe("owner-scoped inspection database", () => {
     expect(await readMedia()).toEqual([]);
   });
 
-  it("retains drafts while pruning only old synced history", async () => {
-    await saveInspection(report("owner-a", "draft-kept"));
-    for (let index = 0; index < 51; index += 1) {
-      await saveInspection(
-        report("owner-a", `synced-${index}`, {
-          status: "synced",
-          updatedAt: new Date(2026, 0, index + 1).toISOString(),
-        }),
-      );
+  it.each([{ status: 'synced' }, { status: 'completed', synced: true }])('removes synced reports and media instead of retaining history (%j)', async flags => {
+    await saveInspection(report('owner-a', 'draft-kept'));
+    await saveInspection(report('owner-a', 'pending-kept', { status: 'completed', synced: false }));
+    await saveInspection(report('owner-a', 'synced-copy', { clientSignature: new Blob(['signature']) }));
+    await saveInspection(report('owner-a', 'synced-copy', flags));
+    expect(await getInspection('owner-a', 'synced-copy')).toBeNull();
+    expect((await getAllInspections('owner-a')).map(item => item.id).sort()).toEqual(['draft-kept', 'pending-kept']);
+    expect(await readStore(__dbTestUtils.MEDIA_STORE)).toEqual([]);
+    // A later cloud photo edit must not recreate the local copy.
+    await saveInspection(report('owner-a', 'synced-copy', flags));
+    expect((await readStore(__dbTestUtils.INSPECTION_STORE)).map(item => item.id).sort()).toEqual(['draft-kept', 'pending-kept']);
+  });
+
+  it.each(['list', 'detail'])('cleans legacy synced copies and their media on %s reads without touching another owner', async mode => {
+    await saveInspection(report('owner-a', 'draft-kept'));
+    await saveInspection(report('owner-a', 'pending-kept', { status: 'completed', synced: false }));
+    await saveInspection(report('owner-a', 'legacy', { clientSignature: new Blob(['signature-a']) }));
+    await saveInspection(report('owner-b', 'legacy', { clientSignature: new Blob(['signature-b']) }));
+    const database = await openDB();
+    await new Promise((resolve, reject) => {
+      const transaction = database.transaction(__dbTestUtils.INSPECTION_STORE, 'readwrite');
+      const store = transaction.objectStore(__dbTestUtils.INSPECTION_STORE);
+      store.put(report('owner-a', 'legacy', { status: 'synced' }));
+      store.put(report('owner-b', 'legacy', { status: 'completed', synced: true }));
+      transaction.oncomplete = resolve;
+      transaction.onerror = () => reject(transaction.error);
+    });
+
+    if (mode === 'list') {
+      expect((await getAllInspections('owner-a')).map(item => item.id).sort()).toEqual(['draft-kept', 'pending-kept']);
+    } else {
+      expect(await getInspection('owner-a', 'legacy')).toBeNull();
     }
-    const records = await getAllInspections("owner-a");
-    expect(records.filter(item => item.status === "synced")).toHaveLength(50);
-    expect(records.some(item => item.id === "draft-kept")).toBe(true);
+    expect((await readStore(__dbTestUtils.INSPECTION_STORE)).map(item => `${item.ownerUid}/${item.id}`).sort()).toEqual(['owner-a/draft-kept', 'owner-a/pending-kept', 'owner-b/legacy']);
+    expect((await readStore(__dbTestUtils.MEDIA_STORE)).map(item => item.ownerUid)).toEqual(['owner-b']);
   });
 
   it("returns only the latest completed delivery inspection for a license plate", async () => {

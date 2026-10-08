@@ -2,10 +2,13 @@ const DB_NAME = "inspectionDB";
 const DB_VERSION = 2;
 const INSPECTION_STORE = "inspections";
 const MEDIA_STORE = "inspectionMedia";
-const SYNCED_RETENTION_LIMIT = 50;
 const MEDIA_PREFIX = "idb-media:";
 
 let connectionPromise;
+
+function isSynced(inspection) {
+  return inspection.synced === true || inspection.status === 'synced';
+}
 
 function requireOwner(ownerUid) {
   if (typeof ownerUid !== "string" || ownerUid.length === 0) {
@@ -199,13 +202,17 @@ export async function saveInspection(inspection) {
   }
 
   try {
+    // Cloud reports must not recreate an offline copy (including after photo edits).
+    if (isSynced(inspection)) {
+      await deleteInspection(inspection.ownerUid, inspection.id);
+      return;
+    }
     const database = await openDB();
     const { storedReport, media } = await extractMedia({
       ...inspection,
       updatedAt: new Date().toISOString(),
     });
     await replaceStoredInspection(database, storedReport, media);
-    await pruneSyncedInspections(inspection.ownerUid);
   } catch (error) {
     throw normalizeStorageError(error);
   }
@@ -218,6 +225,10 @@ export async function getInspection(ownerUid, id, options = {}) {
   const completed = transactionComplete(transaction);
   const report = await requestResult(transaction.objectStore(INSPECTION_STORE).get([ownerUid, id]));
   await completed;
+  if (report && isSynced(report)) {
+    await deleteInspection(ownerUid, id);
+    return null;
+  }
   if (!report || options.includeMedia === false) return report || null;
   return hydrateMedia(database, report);
 }
@@ -227,10 +238,15 @@ export async function getAllInspections(ownerUid, options = {}) {
   const database = await openDB();
   const transaction = database.transaction(INSPECTION_STORE, "readonly");
   const completed = transactionComplete(transaction);
-  const records = await requestResult(
+  const storedRecords = await requestResult(
     transaction.objectStore(INSPECTION_STORE).index("ownerUid").getAll(ownerUid),
   );
   await completed;
+  // Remove history retained by previous versions only for the authenticated owner.
+  for (const report of storedRecords.filter(isSynced)) {
+    await deleteInspection(ownerUid, report.id);
+  }
+  const records = storedRecords.filter(report => !isSynced(report));
   records.sort(
     (a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0),
   );
@@ -287,22 +303,6 @@ export async function findLocalDeliveryInspection(ownerUid, licensePlate) {
         new Date(b.inspectionDateTime || b.createdAt || 0).getTime() -
         new Date(a.inspectionDateTime || a.createdAt || 0).getTime(),
     );
-}
-
-async function pruneSyncedInspections(ownerUid) {
-  const database = await openDB();
-  const readTransaction = database.transaction(INSPECTION_STORE, "readonly");
-  const completed = transactionComplete(readTransaction);
-  const synced = await requestResult(
-    readTransaction.objectStore(INSPECTION_STORE).index("ownerStatus").getAll([ownerUid, "synced"]),
-  );
-  await completed;
-  if (synced.length <= SYNCED_RETENTION_LIMIT) return;
-
-  synced.sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0));
-  for (const report of synced.slice(SYNCED_RETENTION_LIMIT)) {
-    await deleteInspection(ownerUid, report.id);
-  }
 }
 
 export async function requestPersistentStorage() {
