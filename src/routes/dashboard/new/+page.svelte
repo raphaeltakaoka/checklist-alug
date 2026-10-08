@@ -32,6 +32,8 @@
   import { createInspectionWriter, inspectionErrors, firstErrorStep, suggestSignatureName } from "$lib/inspectionForm.js";
   import { linkInspectionContact, unlinkInspectionContact } from '$lib/contacts.js';
   import ClientContactField from '$lib/components/ClientContactField.svelte';
+  import CarPlateField from '$lib/components/CarPlateField.svelte';
+  import { linkInspectionCar, unlinkInspectionCar, normalizePlate } from '$lib/cars.js';
   import Icon from "$lib/components/Icon.svelte";
   import Notice from "$lib/components/Notice.svelte";
   import Dialog from "$lib/components/Dialog.svelte";
@@ -43,6 +45,7 @@
     id: "ins-" + crypto.randomUUID(),
     ownerUid: "",
     licensePlate: "",
+    carId: null,
     inspectionType: "Entrega",
     inspectorName: "",
     clientName: "",
@@ -94,6 +97,9 @@
   let draftStarted = $state(false);
   let contactLinkVersion = 0;
   let contactLinkError = $state('');
+  let carLinkVersion = 0;
+  let carLinkError = $state('');
+  let deliverySearchVersion = 0;
 
   let eligible = $derived(draftStarted || !!(report.licensePlate || report.clientName || report.contactId));
   let photoCount = $derived(
@@ -128,6 +134,54 @@
     };
   }
 
+  function invalidateDeliverySearch() {
+    deliverySearchVersion++;
+    searchingDelivery = false;
+    deliverySearchResults = [];
+    deliveryPickerOpen = false;
+    deliverySearchError = '';
+  }
+
+  function editPlate() {
+    carLinkVersion++;
+    carLinkError = '';
+    invalidateDeliverySearch();
+    if (report.deliveryChecklistId && normalizePlate(report.licensePlate) !== linkedDeliveryPlate) clearDelivery();
+  }
+
+  function selectCar(car) {
+    carLinkVersion++;
+    carLinkError = '';
+    invalidateDeliverySearch();
+    if (report.deliveryChecklistId && normalizePlate(car.plate) !== linkedDeliveryPlate) clearDelivery();
+    linkInspectionCar(report, car);
+    errors = { ...errors, licensePlate: '' };
+    if (report.inspectionType === 'Devolução' && !report.deliveryChecklistId) searchDelivery(report.licensePlate);
+  }
+
+  function clearCar() {
+    carLinkVersion++;
+    carLinkError = '';
+    invalidateDeliverySearch();
+    if (report.deliveryChecklistId) clearDelivery();
+    unlinkInspectionCar(report);
+  }
+
+  async function reuseDeliveryCar(delivery) {
+    if (!delivery.carId || report.carId) return;
+    const current = ++carLinkVersion;
+    const previousPlate = report.licensePlate;
+    try {
+      const response = await authenticatedFetch(`/api/cars/${encodeURIComponent(delivery.carId)}`);
+      const { car } = await response.json();
+      if (!alive || current !== carLinkVersion || report.carId || report.licensePlate !== previousPlate || report.deliveryChecklistId !== delivery.id) return;
+      if (normalizePlate(car.plate) !== normalizePlate(previousPlate)) throw new Error('Plate changed');
+      selectCar(car);
+    } catch {
+      if (alive && current === carLinkVersion) carLinkError = 'Busque e selecione o veículo desta devolução para confirmar o vínculo.';
+    }
+  }
+
   function selectContact(contact) {
     contactLinkVersion++;
     contactLinkError = '';
@@ -156,7 +210,7 @@
   }
 
   function applyDelivery(delivery) {
-    if (!delivery) return;
+    if (!delivery || normalizePlate(delivery.licensePlate) !== normalizePlate(report.licensePlate)) return;
     report.deliveryChecklistId = delivery.id;
     report.deliverySnapshot = {
       id: delivery.id,
@@ -174,6 +228,7 @@
       report.clientName = delivery.clientName;
     }
     reuseDeliveryContact(delivery);
+    reuseDeliveryCar(delivery);
     report.hasDocument = Boolean(delivery.hasDocument);
     report.hasChildSeat = Boolean(delivery.hasChildSeat);
     report.hasEToll = Boolean(delivery.hasEToll);
@@ -198,12 +253,15 @@
       }
     }
     report.partStates = { ...report.partStates, ...preExistingParts };
-    linkedDeliveryPlate = delivery.licensePlate || report.licensePlate;
+    linkedDeliveryPlate = normalizePlate(delivery.licensePlate || report.licensePlate);
     deliveryPickerOpen = false;
     deliverySearchError = "";
   }
 
   function clearDelivery() {
+    invalidateDeliverySearch();
+    carLinkVersion++;
+    carLinkError = '';
     contactLinkVersion++;
     contactLinkError = '';
     report.deliveryChecklistId = null;
@@ -225,7 +283,10 @@
 
   async function searchDelivery(plate) {
     const clean = (plate || "").replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
-    if (clean.length !== 7) return;
+    if (clean.length !== 7 || !report.carId || report.inspectionType !== 'Devolução') return;
+    const current = ++deliverySearchVersion;
+    const selectedCarId = report.carId;
+    const isCurrent = () => alive && current === deliverySearchVersion && report.carId === selectedCarId && report.licensePlate === clean && report.inspectionType === 'Devolução';
     searchingDelivery = true;
     deliverySearchError = "";
     try {
@@ -265,6 +326,7 @@
           new Date(b.inspectionDateTime || b.createdAt || 0).getTime() -
           new Date(a.inspectionDateTime || a.createdAt || 0).getTime(),
       );
+      if (!isCurrent()) return;
       deliverySearchResults = openDeliveries;
       if (openDeliveries.length === 1 && !report.deliveryChecklistId) {
         applyDelivery(openDeliveries[0]);
@@ -274,9 +336,9 @@
         deliverySearchError = `Nenhuma vistoria de entrega em aberto encontrada para a placa ${clean} (já encerrada ou inexistente).`;
       }
     } catch {
-      deliverySearchError = "Não foi possível buscar as entregas. Verifique sua conexão.";
+      if (isCurrent()) deliverySearchError = "Não foi possível buscar as entregas. Verifique sua conexão.";
     } finally {
-      searchingDelivery = false;
+      if (isCurrent()) searchingDelivery = false;
     }
   }
   function captureDiagram() {
@@ -487,14 +549,13 @@
               }
             }
             if (delivery) {
-              report.licensePlate = delivery.licensePlate || report.licensePlate;
+              if (!alive) return;
+              report.licensePlate = normalizePlate(delivery.licensePlate || report.licensePlate);
               applyDelivery(delivery);
             }
           } catch (e) {
             console.warn("Could not load delivery inspection:", e);
           }
-        } else if (report.inspectionType === "Devolução" && report.licensePlate.length === 7) {
-          searchDelivery(report.licensePlate);
         }
       }
       if (!alive) return;
@@ -520,6 +581,8 @@
     return () => {
       alive = false;
       contactLinkVersion++;
+      carLinkVersion++;
+      invalidateDeliverySearch();
       writer.dispose();
       ui.saveAndExit = null;
       ui.inspectionBusy = false;
@@ -613,8 +676,13 @@
                     aria-pressed={report.inspectionType === type}
                     onclick={() => {
                       report.inspectionType = type;
+                      if (type === "Entrega") {
+                        if (report.deliveryChecklistId) clearDelivery();
+                        else invalidateDeliverySearch();
+                      }
                       if (
                         type === "Devolução" &&
+                        report.carId &&
                         report.licensePlate.length === 7 &&
                         !report.deliveryChecklistId
                       ) {
@@ -672,12 +740,12 @@
                         <p class="muted" style="margin:0;font-size:0.875rem">
                           {searchingDelivery
                             ? "Buscando vistorias de entrega para esta placa…"
-                            : report.licensePlate.length === 7
+                            : report.carId
                               ? "Vincule a vistoria de entrega para pré-preencher danos e dados do cliente."
-                              : "Preencha a placa com 7 caracteres para localizar a entrega anterior."}
+                              : "Selecione um veículo cadastrado para localizar a entrega anterior."}
                         </p>
                       </div>
-                      {#if report.licensePlate.length === 7}
+                      {#if report.carId}
                         <button
                           type="button"
                           class="btn"
@@ -699,40 +767,15 @@
                 {/if}
               </div>
             {/if}
-            <div class="field">
-              <label for="plate">Placa do veículo *</label><input
-                id="plate"
-                bind:value={report.licensePlate}
-                oninput={e => {
-                  const cleaned = e.target.value
-                    .replace(/[^a-zA-Z0-9]/g, "")
-                    .toUpperCase()
-                    .slice(0, 7);
-                  if (report.inspectionType === "Devolução") {
-                    if (
-                      report.deliveryChecklistId &&
-                      linkedDeliveryPlate &&
-                      cleaned !== linkedDeliveryPlate
-                    ) {
-                      clearDelivery();
-                    }
-                    report.licensePlate = cleaned;
-                    if (cleaned.length === 7 && !report.deliveryChecklistId) {
-                      searchDelivery(cleaned);
-                    }
-                  } else {
-                    report.licensePlate = cleaned;
-                  }
-                }}
-                maxlength="7"
-                autocomplete="off"
-                autocapitalize="characters"
-                spellcheck="false"
-                placeholder="ABC1D23"
-                aria-invalid={!!errors.licensePlate}
-                aria-describedby="plate-error"
-              /><span id="plate-error" class="field-error">{errors.licensePlate || ""}</span>
-            </div>
+            <CarPlateField
+              bind:plate={report.licensePlate}
+              carId={report.carId}
+              error={errors.licensePlate || ''}
+              onSelect={selectCar}
+              onClear={clearCar}
+              onInput={editPlate}
+            />
+            {#if carLinkError}<p class="muted" role="status">{carLinkError}</p>{/if}
             <ClientContactField
               bind:name={report.clientName}
               contactId={report.contactId}

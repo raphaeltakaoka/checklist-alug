@@ -22,13 +22,13 @@ beforeEach(() => {
 });
 
 describe('inspection synchronization', () => {
-	it('sends version 3 contact and signer fields and preserves the server-resolved UID', async () => {
-		const report = { id: 'ins-contact', ownerUid: 'owner-a', schemaVersion: 3, contactId: 'doc-id', clientUid: 'old-uid', clientSignatureName: 'Representante', partStates: {}, signatureNameInitialized: true };
+	it('sends version 3 vehicle, contact and signer fields and preserves the server-resolved UID', async () => {
+		const report = { id: 'ins-contact', ownerUid: 'owner-a', schemaVersion: 3, carId: 'car-id', contactId: 'doc-id', clientUid: 'old-uid', clientSignatureName: 'Representante', partStates: {}, signatureNameInitialized: true };
 		getInspection.mockResolvedValue(report);
 		authenticatedFetch.mockResolvedValue({ json: async () => ({ report: { ...report, clientUid: 'authoritative-uid' } }) });
 		expect(await syncInspectionToCloud(report)).toMatchObject({ clientUid: 'authoritative-uid' });
 		const payload = JSON.parse(authenticatedFetch.mock.calls[0][1].body);
-		expect(payload).toMatchObject({ schemaVersion: 3, contactId: 'doc-id', clientSignatureName: 'Representante' });
+		expect(payload).toMatchObject({ schemaVersion: 3, carId: 'car-id', contactId: 'doc-id', clientSignatureName: 'Representante' });
 		expect(payload.signatureNameInitialized).toBeUndefined();
 	});
 

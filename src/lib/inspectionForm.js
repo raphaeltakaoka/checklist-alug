@@ -3,6 +3,8 @@ export function inspectionErrors(report, throughStep = 1) {
 	const errors = {};
 	if (!/^[A-Z0-9]{7}$/.test(report.licensePlate || ''))
 		errors.licensePlate = 'Informe os 7 caracteres da placa.';
+	else if (!report.carId)
+		errors.licensePlate = 'Selecione um veículo cadastrado nos resultados da busca.';
 	if (!report.clientName?.trim() || report.clientName.length > 200)
 		errors.clientName = 'Informe o nome do cliente (até 200 caracteres).';
 	if (!report.contactId)

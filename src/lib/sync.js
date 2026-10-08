@@ -133,6 +133,7 @@ function buildCloudReport(localReport) {
     inspectionType: localReport.inspectionType,
     inspectorName: String(localReport.inspectorName || "").slice(0, 120),
     clientName: String(localReport.clientName || "").slice(0, 200),
+    carId: localReport.carId,
     contactId: localReport.contactId,
     clientUid: localReport.clientUid,
     clientSignatureName: localReport.clientSignatureName,

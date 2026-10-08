@@ -7,6 +7,7 @@ function validPayload(overrides = {}) {
     id: "ins-valid",
     ownerUid: "owner-a",
     licensePlate: "ABC1D23",
+    carId: 'car-id',
     inspectionType: "Entrega",
     inspectorName: "Inspetor",
     clientName: "Cliente",
@@ -43,7 +44,7 @@ describe("checklist server validation", () => {
     const payload = validPayload({ schemaVersion: 3, contactId: 'contact-id', clientUid: 'forged', clientSignatureName: ' Representante ' });
     const report = validateChecklistPayload(payload, 'owner-a');
     expect(report).toMatchObject({ schemaVersion: 3, contactId: 'contact-id', clientUid: null, clientSignatureName: 'Representante' });
-    for (const override of [{ contactId: null }, { contactId: '../unsafe' }, { clientSignatureName: '   ' }, { clientSignatureName: 'A'.repeat(201) }]) {
+    for (const override of [{ carId: null }, { carId: '../unsafe' }, { contactId: null }, { contactId: '../unsafe' }, { clientSignatureName: '   ' }, { clientSignatureName: 'A'.repeat(201) }]) {
       expect(() => validateChecklistPayload({ ...payload, ...override }, 'owner-a')).toThrow();
     }
   });

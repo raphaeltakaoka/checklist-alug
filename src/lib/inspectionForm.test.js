@@ -8,6 +8,7 @@ import {
 const report = {
 	schemaVersion: 3,
 	licensePlate: 'ABC1D23',
+	carId: 'car-id',
 	clientName: 'Cliente Teste',
 	contactId: 'contact-test',
 	clientSignatureName: 'Cliente Teste',
@@ -31,6 +32,11 @@ const deferred = () => {
 afterEach(() => vi.useRealTimers());
 
 describe('inspection navigation validation', () => {
+	it('requires a registered vehicle even when a complete plate was typed', () => {
+		const errors = inspectionErrors({ ...report, carId: null }, 1);
+		expect(errors.licensePlate).toContain('Selecione um veículo');
+		expect(firstErrorStep(errors)).toBe(1);
+	});
 	it('checks all preceding steps when jumping forward', () => {
 		const missingMileage = { ...report, mileage: '' };
 		expect(inspectionErrors(missingMileage, 1)).toEqual({});

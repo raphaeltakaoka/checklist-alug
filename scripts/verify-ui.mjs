@@ -24,6 +24,7 @@ const fixtureReport = {
 	id: 'ui-synced',
 	ownerUid,
 	licensePlate: 'DEF4G56',
+	carId: 'car-fixture',
 	clientName: 'Mariana Costa',
 	contactId: 'contact-fixture',
 	clientUid: 'fixture-contact-uid',
@@ -101,6 +102,7 @@ const errors = [];
 const requests = [];
 const moduleRequests = [];
 page.on('pageerror', (error) => errors.push(error.message));
+page.on('dialog', dialog => dialog.accept());
 await page.evaluateOnNewDocument(
 	(report, tasks) => {
 		window.__fixtureReport = report;
@@ -108,6 +110,7 @@ await page.evaluateOnNewDocument(
 		window.__failSaves = false;
 		window.__failSync = true;
 		window.__fixtureReads = [];
+		window.__offline = sessionStorage.getItem('ui-offline') === 'true';
 		Object.defineProperty(navigator, 'onLine', {
 			configurable: true,
 			get: () => !window.__offline
@@ -190,6 +193,21 @@ page.on('request', async (request) => {
 			query: url.search,
 			body: request.postData() ? JSON.parse(request.postData()) : null
 		});
+		if (url.pathname === '/api/cars/search') {
+			const term = url.searchParams.get('q');
+			if (term === 'FAL') return json(request, { error: 'Falha de busca simulada.' }, 503);
+			if (term === 'ZZZ') return json(request, { cars: [] });
+			if (term === 'ABC') {
+				await new Promise(resolve => setTimeout(resolve, 600));
+				return json(request, { cars: [{ id: 'stale-car', plate: 'ABC1234', make: 'Fiat', model: 'Antigo' }] }).catch(() => {});
+			}
+			return json(request, { cars: [
+				{ id: 'car-test', plate: 'XYZ9A87', make: 'Fiat', model: 'Argo' },
+				{ id: 'car-other', plate: 'XYZ9A88', make: 'Toyota', model: 'Corolla' }
+			] });
+		}
+		if (url.pathname.startsWith('/api/cars/')) return json(request, { car: { id: 'car-fixture', plate: 'DEF4G56', make: 'Fiat', model: 'Argo' } });
+		if (url.pathname === '/api/checklists/delivery-lookup') return json(request, { deliveries: [] });
 		if (url.pathname === '/api/contacts/search') {
 			const term = url.searchParams.get('q');
 			if (term === 'fal') return json(request, { error: 'Falha de busca simulada.' }, 503);
@@ -265,6 +283,13 @@ async function waitText(value) {
 		value
 	);
 }
+async function fillPlate(value) {
+	await page.$eval('#plate', (element, value) => {
+		element.focus();
+		element.value = value;
+		element.dispatchEvent(new Event('input', { bubbles: true }));
+	}, value);
+}
 async function fillClient(value) {
 	await page.$eval('#client', (element, value) => {
 		element.value = value;
@@ -337,7 +362,49 @@ try {
 	await click('Conclusão', false);
 	await waitText('Informe os 7 caracteres');
 	assert.equal(await page.evaluate(() => document.activeElement.id), 'plate');
-	await page.type('#plate', 'xyz9a87');
+	const carLookups = () => requests.filter(r => r.path === '/api/cars/search');
+	const beforeCars = carLookups().length;
+	await page.type('#plate', 'xy');
+	await new Promise(resolve => setTimeout(resolve, 400));
+	assert.equal(carLookups().length, beforeCars, 'Two plate characters must not start a lookup');
+	await page.type('#plate', 'z');
+	await new Promise(resolve => setTimeout(resolve, 100));
+	assert.equal(carLookups().length, beforeCars, 'Plate lookup waits for the debounce');
+	await waitText('Toyota Corolla');
+	await fillPlate('xyz-9a87');
+	assert.equal(await page.$eval('#plate', el => el.value), 'XYZ9A87');
+	await click('Continuar');
+	await waitText('Selecione um veículo cadastrado');
+	assert.equal(await page.evaluate(() => document.activeElement.id), 'plate');
+	await waitText('Toyota Corolla');
+	await page.keyboard.press('ArrowDown');
+	await page.keyboard.press('Enter');
+	await waitText('Veículo vinculado');
+	assert.equal(await page.$eval('#plate', el => el.readOnly), true);
+	await click('Desvincular veículo');
+	assert.equal(await page.$eval('#plate', el => el.value), '');
+	assert.equal(await page.$eval('#plate', el => el.readOnly), false);
+	await fillPlate('zzz');
+	await waitText('Nenhum veículo encontrado');
+	await fillPlate('fal');
+	await waitText('Não foi possível buscar veículos');
+	await page.evaluate(() => { window.__offline = true; });
+	const beforeOfflineCars = carLookups().length;
+	await fillPlate('off');
+	await waitText('Conecte-se à internet para buscar um veículo');
+	assert.equal(carLookups().length, beforeOfflineCars);
+	await page.evaluate(() => { window.__offline = false; });
+	const slowCar = page.waitForRequest(request => new URL(request.url()).pathname === '/api/cars/search' && new URL(request.url()).searchParams.get('q') === 'ABC');
+	await fillPlate('abc');
+	await slowCar;
+	await fillPlate('xyz9a87');
+	await waitText('Toyota Corolla');
+	await click('XYZ9A87', false);
+	await waitText('Veículo vinculado');
+	await new Promise(resolve => setTimeout(resolve, 650));
+	assert.equal(await page.$eval('#plate', el => el.value), 'XYZ9A87', 'Stale car responses cannot replace the selection');
+	await captureAt(390, 'car-linked-mobile');
+
 	const lookups = () => requests.filter(r => r.path === '/api/contacts/search');
 	const initialLookups = lookups().length;
 	await page.type('#client', 'ma');
@@ -477,6 +544,7 @@ try {
 	assert.equal(completed.status, 'completed');
 	assert.equal(completed.syncState, 'queued');
 	assert.equal(completed.schemaVersion, 3);
+	assert.equal(completed.carId, 'car-test');
 	assert.equal(completed.contactId, 'contact-test');
 	assert.equal(completed.clientUid, 'historical-test-uid');
 	assert.equal(completed.clientSignatureName, 'Representante de Teste');
@@ -493,6 +561,7 @@ try {
 			).getAllInspections('ui-test-inspector')
 		).find((r) => r.licensePlate === 'XYZ9A87')
 	);
+	assert.equal(finalRecord.carId, 'car-test');
 	assert.equal(finalRecord.synced, true);
 	assert.equal(finalRecord.status, 'synced');
 	assert.equal(finalRecord.clientSignatureName, 'Representante de Teste');
@@ -584,6 +653,9 @@ try {
 	);
 	await page.goto(base + '/dashboard/new?deliveryId=ui-linked-delivery');
 	await waitText('Contato vinculado');
+	await waitText('Veículo vinculado');
+	assert.equal(await page.$eval('#plate', el => el.readOnly), true);
+	assert(requests.some(r => r.path === '/api/cars/car-fixture'), 'Delivery vehicle is validated through the API');
 	assert.equal(await page.$eval('#client', el => el.value), 'Cliente de Teste');
 	assert(requests.some(r => r.path === '/api/contacts/contact-test'), 'Delivery contact is validated through the API');
 	await click('Salvar e sair');
@@ -591,6 +663,7 @@ try {
 	const deliveryDraft = await page.evaluate(async () => (
 		await (await import('/src/lib/db.js')).getAllInspections('ui-test-inspector')
 	).find(r => r.deliveryChecklistId === 'ui-linked-delivery'));
+	assert.equal(deliveryDraft.carId, 'car-fixture');
 	assert.equal(deliveryDraft.clientUid, 'historical-test-uid');
 	await page.goto(base + `/dashboard/new?id=${deliveryDraft.id}`);
 	await waitText('Contato vinculado');
@@ -604,11 +677,32 @@ try {
 	const unlinked = await page.evaluate(async id => (await import('/src/lib/db.js')).getInspection('ui-test-inspector', id), deliveryDraft.id);
 	assert.equal(unlinked.contactId, null);
 	assert.equal(unlinked.clientUid, null);
+	await waitText('Veículo vinculado');
+	await waitText('Salvo neste dispositivo');
+	await page.evaluate(() => { window.__offline = true; sessionStorage.setItem('ui-offline', 'true'); });
+	await page.reload();
+	await waitText('Veículo vinculado');
+	assert.equal(await page.$eval('#plate', el => el.value), 'DEF4G56', 'The saved vehicle link survives an offline reload');
+	await page.evaluate(() => { window.__offline = false; sessionStorage.removeItem('ui-offline'); });
+	await click('Desvincular veículo');
+	assert.equal(await page.$eval('#plate', el => el.value), '');
+	assert(!(await text()).includes('Vistoria de Entrega Vinculada'), 'Unlinking the car removes the prior delivery');
+	await click('Salvar e sair');
+	await waitText('Olá, Rafael.');
+	await page.goto(base + `/dashboard/new?id=${deliveryDraft.id}`);
+	await page.waitForSelector('#plate');
+	const clearedCar = await page.evaluate(async id => (await import('/src/lib/db.js')).getInspection('ui-test-inspector', id), deliveryDraft.id);
+	assert.equal(clearedCar.carId, null);
+	assert.equal(clearedCar.licensePlate, '');
+	assert.equal(clearedCar.deliveryChecklistId, null);
+	assert.equal(clearedCar.deliverySnapshot, null);
+	assert.deepEqual(clearedCar.partStates, {}, 'Inherited damages are removed with the vehicle');
+	console.log('PASS vehicles: threshold, debounce, normalization, keyboard and pointer selection, required link, stale results, failures, offline restoration and completion, sync payload, delivery inheritance and unlink');
 	console.log('PASS contacts: three-character threshold, keyboard and pointer selection, stale results, search failures, independent signer, delivery validation and draft restoration');
 	assert.deepEqual(errors, [], 'No browser runtime errors');
 	assert(
 		requests.some(
-			(r) => r.path === '/api/checklists/sync' && r.body?.schemaVersion === 3 && r.body?.contactId === 'contact-test' && r.body?.clientSignatureName === 'Representante de Teste'
+			(r) => r.path === '/api/checklists/sync' && r.body?.schemaVersion === 3 && r.body?.carId === 'car-test' && r.body?.contactId === 'contact-test' && r.body?.clientSignatureName === 'Representante de Teste'
 		)
 	);
 	await writeFile(

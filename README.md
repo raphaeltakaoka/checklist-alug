@@ -29,7 +29,8 @@ The authoritative `firestore.rules`, `storage.rules`, `firestore.indexes.json`, 
 - Media is stored at `checklists/{ownerUid}/{inspectionId}/...` in Cloud Storage.
 - Local IndexedDB v2 keys all reports and Blobs by owner UID and inspection ID.
 
-New inspections use `schemaVersion: 3` and require a registered contact. `contactId` stores the
+New inspections use `schemaVersion: 3` and require a registered contact and vehicle.
+`carId` stores the `cars` document ID. `contactId` stores the
 `contacts` document ID, `clientUid` stores its authoritative `uid` (falling back to the document ID),
 and `clientSignatureName` stores the independent name of the signer. Only version 3 is supported;
 other schema versions are rejected without conversion. No IndexedDB version upgrade is needed.
@@ -41,6 +42,15 @@ characters and returns up to ten name matches, with minimal identifying fields. 
 operations or administrator read permission. Checklist sync resolves the UID inside the write
 transaction and rejects missing contacts. New contact searches require connectivity; an already
 linked draft can be completed offline and validated when it synchronizes.
+
+`GET /api/cars/search?q=...` searches the existing single-field `plate` index after three
+characters, returning up to ten vehicles with plate, make and model. The picker waits 300 ms,
+normalizes case and hyphens, and requires selection; unlinking clears the plate and car ID.
+`GET /api/cars/{id}` validates a delivery vehicle before reusing it. Both endpoints require
+operations or administrator read permission. Synchronization verifies that the selected car
+still exists and its registered plate matches the inspection. Saved vehicle links remain
+available offline; finding a new vehicle requires connectivity. Changing the vehicle clears
+the prior delivery and inherited damages. No new Firestore indexes or rules are required.
 
 The shared Firestore rules continue to deny browser writes to checklists; these additions use the
 existing Admin SDK API authorization and contact search index, without deploying rules or indexes.

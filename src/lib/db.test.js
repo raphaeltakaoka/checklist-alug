@@ -26,8 +26,8 @@ function report(ownerUid, id, overrides = {}) {
 }
 
 describe("owner-scoped inspection database", () => {
-  it('preserves contact identity and an independent signer through an offline draft reload', async () => {
-    const fields = { schemaVersion: 3, contactId: 'doc-id', clientUid: 'historical-uid', clientName: 'Maria', clientSignatureName: 'Representante', signatureNameInitialized: true };
+  it('preserves vehicle, contact identity and an independent signer through an offline draft reload', async () => {
+    const fields = { schemaVersion: 3, carId: 'car-id', licensePlate: 'ABC1D23', contactId: 'doc-id', clientUid: 'historical-uid', clientName: 'Maria', clientSignatureName: 'Representante', signatureNameInitialized: true };
     await saveInspection(report('owner-a', 'contact-draft', fields));
     expect(await getInspection('owner-a', 'contact-draft')).toMatchObject(fields);
     await saveInspection(report('owner-a', 'contact-draft', { ...fields, contactId: null, clientUid: null, clientName: '' }));

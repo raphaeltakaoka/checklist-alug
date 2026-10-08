@@ -1,6 +1,7 @@
 import { ApiError } from "$lib/server/errors";
 import { countDamages } from "$lib/inspection.js";
 import { validateContactId } from '$lib/server/contacts';
+import { validateCarId } from '$lib/server/cars';
 
 const PART_IDS = new Set([
   "front_bumper",
@@ -35,6 +36,7 @@ const ALLOWED_FIELDS = new Set([
   "id",
   "ownerUid",
   "licensePlate",
+  "carId",
   "inspectionType",
   "inspectorName",
   "clientName",
@@ -263,7 +265,8 @@ export function validateChecklistPayload(payload, ownerUid) {
     status: "completed",
     synced: true,
   };
-  if (report.licensePlate.length !== 7) fail("Invalid license plate.");
+  if (!/^[A-Z0-9]{7}$/.test(report.licensePlate)) fail("Invalid license plate.");
+  report.carId = validateCarId(payload.carId);
   report.contactId = validateContactId(payload.contactId);
   report.clientSignatureName = string(payload.clientSignatureName, 'signature name', 200).trim();
   if (!report.clientSignatureName) fail('Informe o nome de quem assina.');

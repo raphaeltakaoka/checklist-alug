@@ -15,6 +15,7 @@ import {
 } from "$lib/server/checklistValidation";
 import { readJson } from "$lib/server/requestValidation";
 import { contactSelection } from '$lib/server/contacts';
+import { carSelection } from '$lib/server/cars';
 
 export async function POST({ request }) {
   try {
@@ -49,6 +50,10 @@ export async function POST({ request }) {
       report = validateChecklistPayload(payload, expectedOwnerUid);
       const contact = contactSelection(await transaction.get(adminDb.collection('contacts').doc(report.contactId)));
       report.clientUid = contact.uid;
+      const car = carSelection(await transaction.get(adminDb.collection('cars').doc(report.carId)));
+      if (car.plate !== report.licensePlate) {
+        throw new ApiError(400, 'A placa não corresponde ao veículo vinculado. Selecione o veículo novamente.');
+      }
       const now = Timestamp.now();
       report.inspectionDateTime = Timestamp.fromDate(report.inspectionDateTime);
       report.createdAt = existingData?.createdAt || now;
