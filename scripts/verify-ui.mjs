@@ -176,7 +176,16 @@ page.on('request', async (request) => {
 		export async function getDocs(q) {
 			window.__fixtureReads.push(q); if(window.__offline) throw new Error('offline');
 			const more = q.constraints.some(c => c.cursor);
-			const records = q.name === 'cards' ? window.__fixtureTasks : more ? [{...window.__fixtureReport, id:'older-match', licensePlate:'ZZZ9Z99'}] : Array.from({length:20}, (_, i) => ({...window.__fixtureReport, id:'cloud-'+i}));
+			const plateFilter = q.constraints.find(c => c.where?.[0] === 'licensePlate');
+			if (plateFilter && window.__delayHistory) await new Promise(resolve => setTimeout(resolve, 600));
+			const firstPage = Array.from({length:20}, (_, i) => ({...window.__fixtureReport, id:'cloud-'+i}));
+			const later = [
+				{...window.__fixtureReport, id:'older-match', licensePlate:'ZZZ9Z99'},
+				{...window.__fixtureReport, id:'plate-old', licensePlate:'XYZ9A87', inspectionDateTime:'2026-08-01T10:00:00.000Z'},
+				{...window.__fixtureReport, id:'plate-new', licensePlate:'XYZ9A87', inspectionDateTime:'2026-10-01T10:00:00.000Z'}
+			];
+			const candidates = q.name === 'cards' ? window.__fixtureTasks : plateFilter ? [...firstPage, ...later] : more ? later : firstPage;
+			const records = q.name === 'checklist_summaries' ? candidates.filter(record => q.constraints.every(c => !c.where || c.where[1] !== '==' || record[c.where[0]] === c.where[2])) : candidates;
 			const docs = records.map(record => ({id:record.id, data:() => record}));
 			return {docs, size:docs.length, forEach:fn => docs.forEach(fn)};
 		}`
@@ -641,17 +650,71 @@ try {
 	);
 	await click('Histórico');
 	await waitText('20 carregadas');
+	assert.equal(await page.$('[aria-label="Origem do histórico"]'), null, 'History no longer has a cloud/device selector');
 	await captureAt(1440, 'history-desktop');
-	await page.type('input[type=search]', 'ZZZ9Z99');
+	await captureAt(390, 'history-mobile');
+	assert.equal(await page.$('input[type=search]'), null, 'History only uses the shared plate lookup');
+	const historyLookupCount = carLookups().length;
+	await page.type('#history-plate', 'xy');
+	await new Promise(resolve => setTimeout(resolve, 400));
+	assert.equal(carLookups().length, historyLookupCount, 'History must not search below three characters');
+	await page.type('#history-plate', 'z');
+	await page.waitForSelector('#history-plate-option-0', { visible: true });
+	assert.equal(carLookups().length, historyLookupCount + 1, 'History reuses the debounced three-character car lookup');
+	await page.keyboard.press('ArrowDown');
+	await page.keyboard.press('Enter');
+	await waitText('2 carregadas');
+	assert.equal(await page.$eval('#history-plate', el => el.value), 'XYZ9A87');
+	assert.deepEqual(await page.$$eval('.inspection-list a.inspection-link', links => links.map(el => el.getAttribute('href'))), [
+		'/dashboard/checklists/plate-new', '/dashboard/checklists/plate-old'
+	], 'Selecting a plate finds older records outside the first page and sorts newest first');
+	const plateQuery = await page.evaluate(() => window.__fixtureReads.filter(q => q.name === 'checklist_summaries').at(-1));
+	assert(plateQuery.constraints.some(c => c.where?.[0] === 'licensePlate' && c.where[2] === 'XYZ9A87'));
+	assert(plateQuery.constraints.some(c => c.where?.[0] === 'ownerUid' && c.where[2] === 'ui-test-inspector'), 'Plate filtering preserves owner isolation');
+	await captureAt(390, 'history-plate-mobile');
+	await page.select('#history-type', 'Devolução');
 	await waitText('Nenhuma vistoria encontrada');
+	await click('Limpar filtros');
+	await waitText('20 carregadas');
+	assert.equal(await page.$eval('#history-plate', el => el.value), '');
+	await page.type('#history-plate', 'ZZZ');
+	await waitText('Nenhum veículo encontrado para esta placa');
+	await click('Limpar filtros');
+	await page.waitForFunction(() => document.getElementById('history-plate').value === '');
+	await page.type('#history-plate', 'FAL');
+	await waitText('Não foi possível buscar veículos');
+	await click('Limpar filtros');
+	await page.waitForFunction(() => document.getElementById('history-plate').value === '');
+	await page.evaluate(() => { window.__delayHistory = true; });
+	await page.type('#history-plate', 'xyz');
+	await page.waitForSelector('#history-plate-option-0', { visible: true });
+	await page.click('#history-plate-option-0');
+	await click('Limpar placa');
+	await waitText('20 carregadas');
+	await new Promise(resolve => setTimeout(resolve, 650));
+	assert(!(await text()).includes('XYZ9A87'), 'Clearing a plate ignores late history results');
+	await page.evaluate(() => { window.__delayHistory = false; });
 	await click('Carregar mais vistorias');
 	await waitText('ZZZ9Z99');
-	await click('Neste dispositivo');
-	await click('Limpar filtros');
+	await page.evaluate(() => {
+		window.__offline = true;
+		sessionStorage.setItem('ui-offline', 'true');
+	});
+	await page.goto(base + '/dashboard/checklists?source=local');
+	await waitText('Sem conexão para consultar o histórico');
+	assert((await text()).includes('Rascunhos e vistorias aguardando envio estão no Início'));
+	assert.equal(await page.$('a[href="/dashboard/new?id=ui-draft"]'), null, 'Old device history URLs do not list local records');
+	await page.evaluate(() => {
+		window.__offline = false;
+		sessionStorage.removeItem('ui-offline');
+		dispatchEvent(new Event('online'));
+	});
+	await waitText('20 carregadas');
+	await click('Início');
 	await waitText('ABC1D23');
-	assert(!(await text()).includes('XYZ9A87'), 'Synced reports disappear from device history');
-	await captureAt(390, 'history-local-mobile');
+	assert(!(await text()).includes('XYZ9A87'), 'Synced reports disappear from the local dashboard');
 	await page.click('a[href="/dashboard/new?id=ui-draft"]');
+	await page.waitForSelector('#plate');
 	await waitText('Continuar vistoria');
 	assert.equal(await page.$eval('#plate', (el) => el.value), 'ABC1D23');
 	await click('Continuar');
@@ -664,6 +727,7 @@ try {
 	}, fixtureReport);
 	await page.goto(base + '/dashboard/new/ui-local-report');
 	await waitText('Laudo de vistoria');
+	assert.equal(await page.$eval('main a.text-action', el => el.getAttribute('href')), '/dashboard', 'Local reports return to the dashboard');
 	await captureAt(390, 'report-mobile');
 	await page.emulateMediaType('print');
 	await page.pdf({
@@ -696,7 +760,7 @@ try {
 	}), null, 'Editing a cloud report does not recreate an offline copy');
 	await noOverflow();
 	console.log(
-		'PASS history: loaded-record search, pagination, local history, resume; shared local/cloud report, photo deletion and printable PDF'
+		'PASS history: shared plate lookup, three-character threshold, selection, full plate history, newest-first ordering, owner isolation, clearing, stale results, empty/error states, pagination and offline reconnection; dashboard draft resume and reports'
 	);
 	await click('Tarefas');
 	await waitText('Entrega — Mariana Costa');

@@ -35,6 +35,12 @@ Failed uploads stay on the device for retry. Previously retained synced copies a
 removed when the owner reads local history or opens a local report. Synced reports
 remain available through the cloud history; photo edits do not recreate local copies.
 
+History reuses the inspection vehicle picker: plate suggestions start after three
+characters. Selecting a vehicle queries its plate across all checklist summaries,
+preserves the inspector's owner filter, and sorts the matching reports newest first.
+The plate query uses equality filters without a date ordering clause, so it does
+not require a new composite index. Clearing the plate restores the paginated history.
+
 New inspections use `schemaVersion: 3` and require a registered contact and vehicle.
 `carId` stores the `cars` document ID. `contactId` stores the
 `contacts` document ID, `clientUid` stores its authoritative `uid` (falling back to the document ID),

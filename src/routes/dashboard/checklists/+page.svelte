@@ -1,6 +1,5 @@
 <script>
   import { onMount } from "svelte";
-  import { page } from "$app/state";
   import { db } from "$lib/firebaseDb.js";
   import {
     collection,
@@ -11,69 +10,75 @@
     startAfter,
     where,
   } from "firebase/firestore";
-  import { getAllInspections } from "$lib/db.js";
   import { authState } from "$lib/auth.svelte.js";
   import { normalizeCloudInspection } from "$lib/inspection.js";
-  import Icon from "$lib/components/Icon.svelte";
+  import { normalizePlate } from '$lib/cars.js';
+  import CarPlateField from '$lib/components/CarPlateField.svelte';
   import Notice from "$lib/components/Notice.svelte";
   import EmptyState from "$lib/components/EmptyState.svelte";
   import InspectionRow from "$lib/components/InspectionRow.svelte";
-  let source = $state("cloud");
-  let cloud = $state([]);
-  let local = $state([]);
+  let records = $state([]);
   let loading = $state(true);
   let loadingMore = $state(false);
   let error = $state("");
   let offline = $state(false);
   let lastDocument = null;
   let hasMore = $state(true);
-  let search = $state("");
+  let plate = $state('');
+  let carId = $state(null);
+  let selectedPlate = $state('');
   let type = $state("All");
   let request = 0;
-  let records = $derived(source === "cloud" ? cloud : local);
   let filtered = $derived(
     records.filter(
-      record =>
-        `${record.licensePlate} ${record.clientName}`
-          .toLocaleLowerCase()
-          .includes(search.trim().toLocaleLowerCase()) &&
-        (type === "All" || record.inspectionType === type),
+      record => type === "All" || record.inspectionType === type,
     ),
   );
   async function load(append = false) {
-    if (append && (loadingMore || !hasMore)) return;
+    if (append && (loading || loadingMore || !hasMore)) return;
     const token = ++request;
+    const filterPlate = selectedPlate;
     error = "";
     if (append) loadingMore = true;
-    else loading = true;
+    else {
+      loading = true;
+      loadingMore = false;
+      records = [];
+      lastDocument = null;
+      hasMore = true;
+    }
     try {
-      if (source === "local") {
-        local = await getAllInspections(authState.user.uid);
-        return;
-      }
       if (offline) throw new Error("offline");
       const constraints = [];
       if (!authState.hasPermission("administrator", "read"))
         constraints.push(where("ownerUid", "==", authState.user.uid));
-      constraints.push(orderBy("inspectionDateTime", "desc"), limit(20));
-      if (append && lastDocument) constraints.push(startAfter(lastDocument));
+      if (filterPlate) {
+        // Equality filters use the existing single-field indexes. Sort only this
+        // plate's summaries locally to avoid requiring a new composite index.
+        constraints.push(where('licensePlate', '==', filterPlate));
+      } else {
+        constraints.push(orderBy("inspectionDateTime", "desc"), limit(20));
+        if (append && lastDocument) constraints.push(startAfter(lastDocument));
+      }
       const snapshot = await getDocs(query(collection(db, "checklist_summaries"), ...constraints));
       if (token !== request) return;
       const incoming = snapshot.docs.map(doc => ({
         ...normalizeCloudInspection(doc.data(), doc.id),
         synced: true,
       }));
-      cloud = append ? [...cloud, ...incoming] : incoming;
+      if (filterPlate) incoming.sort((a, b) =>
+        (new Date(b.inspectionDateTime || b.createdAt || 0).getTime() || 0) -
+        (new Date(a.inspectionDateTime || a.createdAt || 0).getTime() || 0)
+      );
+      records = append ? [...records, ...incoming] : incoming;
       lastDocument = snapshot.docs.at(-1) || null;
-      hasMore = snapshot.size === 20;
+      hasMore = !filterPlate && snapshot.size === 20;
     } catch {
       if (token === request)
         error =
-          source === "local"
-            ? "Não foi possível abrir o histórico deste dispositivo."
-            : offline
-              ? "Sem conexão para consultar as vistorias sincronizadas. Abra “Neste dispositivo” para ver os registros disponíveis offline."
-              : "Não foi possível carregar o histórico. Tente novamente.";
+          offline
+            ? "Sem conexão para consultar o histórico. Rascunhos e vistorias aguardando envio estão no Início."
+            : "Não foi possível carregar o histórico. Tente novamente.";
     } finally {
       if (token === request) {
         loading = false;
@@ -81,22 +86,33 @@
       }
     }
   }
-  function changeSource(next) {
-    if (source === next) return;
-    source = next;
+  function selectPlate(car) {
+    plate = normalizePlate(car.plate);
+    carId = car.id;
+    selectedPlate = plate;
     load();
+  }
+  function clearPlate() {
+    const wasFiltered = !!selectedPlate;
+    plate = '';
+    carId = null;
+    selectedPlate = '';
+    if (wasFiltered) load();
   }
   onMount(() => {
     offline = !navigator.onLine;
-    if (offline || page.url.searchParams.get("source") === "local") source = "local";
     load();
-    const update = () => (offline = !navigator.onLine);
-    window.addEventListener("online", update);
-    window.addEventListener("offline", update);
+    const online = () => {
+      offline = false;
+      if (error) load();
+    };
+    const disconnected = () => (offline = true);
+    window.addEventListener("online", online);
+    window.addEventListener("offline", disconnected);
     return () => {
       request++;
-      window.removeEventListener("online", update);
-      window.removeEventListener("offline", update);
+      window.removeEventListener("online", online);
+      window.removeEventListener("offline", disconnected);
     };
   });
 </script>
@@ -110,26 +126,23 @@
       <p>Encontre uma vistoria, consulte os detalhes e imprima o laudo.</p>
     </div>
   </div>
-  <div class="segmented" aria-label="Origem do histórico">
-    <button aria-pressed={source === "cloud"} onclick={() => changeSource("cloud")}
-      >Sincronizadas</button
-    ><button aria-pressed={source === "local"} onclick={() => changeSource("local")}
-      >Neste dispositivo</button
-    >
-  </div>
   <div class="toolbar section">
-    <div class="search">
-      <Icon name="search" size={18} /><input
-        type="search"
-        bind:value={search}
-        aria-label="Buscar no histórico carregado"
-        placeholder="Buscar por placa ou cliente"
+    <div class="history-plate">
+      <CarPlateField
+        mode="history"
+        bind:plate
+        {carId}
+        onSelect={selectPlate}
+        onClear={clearPlate}
       />
     </div>
-    <select bind:value={type} aria-label="Tipo de vistoria"
-      ><option value="All">Todos os tipos</option><option>Entrega</option><option>Devolução</option
-      ></select
-    >
+    <div class="field history-type">
+      <label for="history-type">Tipo de vistoria</label>
+      <select id="history-type" bind:value={type}
+        ><option value="All">Todos os tipos</option><option>Entrega</option><option>Devolução</option
+        ></select
+      >
+    </div>
   </div>
   <Notice message={error} onretry={() => load()} />
   {#if loading}<div class="panel" role="status" aria-label="Carregando histórico">
@@ -139,13 +152,12 @@
     <div class="section-heading">
       <span class="muted"
         >{filtered.length}
-        {filtered.length === 1 ? "vistoria encontrada" : "vistorias encontradas"}{source === "cloud"
-          ? ` entre ${cloud.length} carregadas`
-          : " neste dispositivo"}</span
-      >{#if search || type !== "All"}<button
+        {filtered.length === 1 ? "vistoria encontrada" : "vistorias encontradas"}
+        entre {records.length} carregadas</span
+      >{#if plate || type !== "All"}<button
           class="text-action"
           onclick={() => {
-            search = "";
+            clearPlate();
             type = "All";
           }}>Limpar filtros</button
         >{/if}
@@ -153,24 +165,18 @@
     {#if filtered.length}<div class="panel inspection-list">
         {#each filtered as record (record.id)}<InspectionRow
             inspection={record}
-            href={source === "cloud"
-              ? `/dashboard/checklists/${encodeURIComponent(record.id)}`
-              : record.status === "draft"
-                ? `/dashboard/new?id=${encodeURIComponent(record.id)}`
-                : `/dashboard/new/${encodeURIComponent(record.id)}`}
+            href={`/dashboard/checklists/${encodeURIComponent(record.id)}`}
           />{/each}
       </div>
     {:else if !error}<EmptyState
-        title={search || type !== "All"
+        title={selectedPlate || type !== "All"
           ? "Nenhuma vistoria encontrada"
           : "Seu histórico começa aqui"}
-        description={search || type !== "All"
-          ? "Tente outra placa, cliente ou tipo de vistoria."
-          : source === "local"
-            ? "As vistorias salvas neste dispositivo aparecerão aqui."
-            : "As vistorias enviadas aparecerão aqui."}
+        description={selectedPlate || type !== "All"
+          ? "Tente outra placa ou tipo de vistoria."
+          : "As vistorias enviadas aparecerão aqui."}
       />{/if}
-    {#if source === "cloud" && hasMore && !offline}<div
+    {#if hasMore && !offline}<div
         class="inline section"
         style="justify-content:center"
       >
@@ -180,3 +186,12 @@
       </div>{/if}
   {/if}
 </main>
+
+<style>
+  .toolbar { align-items: flex-start; }
+  .history-plate { flex: 1; min-width: 0; }
+  @media (max-width: 699px) {
+    .history-plate { flex-basis: 100%; }
+    .history-type { width: 100%; }
+  }
+</style>

@@ -64,7 +64,7 @@
 			);
 		await deleteInspection(authState.user.uid, inspection.id);
 		notify('Vistoria excluída.', 'success');
-		await goto('/dashboard/checklists');
+		await goto('/dashboard');
 	}
 	async function removePhoto(partId, index) {
 		await latestForMutation();
@@ -112,7 +112,7 @@
 		/>
 	{:else if inspection}<InspectionReport
 			{inspection}
-			backHref="/dashboard/checklists?source=local"
+			backHref="/dashboard"
 			ondelete={authState.canInspect('delete') &&
 			!ui.syncingIds.has(inspection.id)
 				? remove
@@ -125,7 +125,7 @@
 	{:else}<EmptyState
 			title="Vistoria não encontrada"
 			description="Este registro não está disponível neste dispositivo."
-			><a class="btn" href="/dashboard/checklists">Voltar ao histórico</a
+			><a class="btn" href="/dashboard">Voltar ao início</a
 			></EmptyState
 		>{/if}
 </main>

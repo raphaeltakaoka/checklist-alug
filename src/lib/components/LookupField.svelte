@@ -9,6 +9,7 @@
 	let searched = $state(false);
 	let open = $state(false);
 	let activeIndex = $state(-1);
+	let pointerActive = false;
 	let container;
 	let input;
 	let timer;
@@ -99,13 +100,19 @@
 	onDestroy(invalidate);
 </script>
 
-<svelte:document onpointerdown={event => {
-	if (!container?.contains(event.target)) open = false;
-}} />
+<svelte:document
+	onpointerdown={() => { pointerActive = true; }}
+	onpointerup={() => { pointerActive = false; }}
+	onpointercancel={() => { pointerActive = false; }}
+	onclick={event => {
+		// Close after the target click so collapsing results cannot move its button.
+		if (!container?.contains(event.target)) open = false;
+	}}
+/>
 
 <div class="field lookup-field" bind:this={container} onfocusout={event => {
 	// A mobile tap can blur the input with no next focus target before its click.
-	if (event.relatedTarget && !container?.contains(event.relatedTarget)) open = false;
+	if (!pointerActive && event.relatedTarget && !container?.contains(event.relatedTarget)) open = false;
 }}>
 	<label for={config.id}>{config.label}</label>
 	<input

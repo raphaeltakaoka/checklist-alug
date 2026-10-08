@@ -2,7 +2,7 @@
 
 The interface now prioritizes starting and resuming vehicle inspections on a phone. Shared navigation exposes Início, Histórico, and Tarefas; the inspection flow replaces navigation with persistent Back/Continue controls and Save and exit.
 
-The light visual system uses system fonts, consistent line icons, compact records, and readable form controls. History provides separate cloud and device views, and local/cloud reports share their presentation and print layout. Task attachments and damage editors use native dialogs with focus restoration and mobile sheets.
+The light visual system uses system fonts, consistent line icons, compact records, and readable form controls. History lists synced cloud reports and reuses the inspection plate picker with suggestions after three characters. Selecting a plate searches all its summaries and shows the latest inspections first; the type filter remains available. Drafts and inspections awaiting upload are accessible from Início. Local/cloud reports share their presentation and print layout. Task attachments and damage editors use native dialogs with focus restoration and mobile sheets.
 
 Inspection saves are serialized. Step links and Continue apply the same validation, corrected fields clear their errors, failed saves stay actionable, and completion cannot be overwritten by an older draft. Photo selection enforces the existing six-per-part and 24-per-inspection limits. Updates are deferred while an inspection is open.
 
