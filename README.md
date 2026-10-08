@@ -4,12 +4,18 @@ Mobile-first SvelteKit PWA for vehicle inspections. It supports offline drafts a
 
 ## Local setup
 
+Requires Node.js 22.17 or newer. SvelteKit configuration lives in `vite.config.js`;
+the `$lib` alias is declared explicitly there and in `jsconfig.json`.
+TypeScript stays on 6.x to satisfy SvelteKit 3 and `svelte-check` peer dependencies.
+
 1. Install the locked dependencies with `npm install`.
 2. Copy `.env.example` to `.env` and supply the Firebase web configuration.
 3. Set `FIREBASE_SERVICE_ACCOUNT` only in trusted server environments. Never expose it through a `PUBLIC_` variable.
 4. Run `npm run dev`.
 
-The public Firebase and VAPID values use SvelteKit's `PUBLIC_*` convention because they are embedded in the browser bundle. Authorization is enforced with Firebase ID tokens, server-side permission checks, Firestore rules, and Storage rules—not by hiding those public identifiers.
+The public Firebase and VAPID values are declared with `public: true` and `static: true`
+in `src/env.js`, preserving their `PUBLIC_*` names and embedding them in the browser
+bundle. Server credentials remain private runtime variables. Authorization is enforced with Firebase ID tokens, server-side permission checks, Firestore rules, and Storage rules—not by hiding those public identifiers.
 
 ## Verification
 

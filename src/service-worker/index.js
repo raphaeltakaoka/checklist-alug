@@ -3,7 +3,8 @@
 /// <reference lib="webworker" />
 /// <reference types="@sveltejs/kit" />
 
-import { build, version } from '$service-worker';
+import { version } from '$app/env';
+import { immutable } from '$app/manifest';
 import { initializeApp } from "firebase/app";
 import { getMessaging, onBackgroundMessage } from "firebase/messaging/sw";
 import {
@@ -13,7 +14,7 @@ import {
 	PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
 	PUBLIC_FIREBASE_PROJECT_ID,
 	PUBLIC_FIREBASE_STORAGE_BUCKET
-} from '$env/static/public';
+} from '$app/env/public';
 
 // This gives `self` the correct Service Worker types
 const self = /** @type {ServiceWorkerGlobalScope} */ (/** @type {unknown} */ (globalThis.self));
@@ -23,7 +24,7 @@ const CACHE_PREFIX = 'checklist-alug-';
 const CACHE = `${CACHE_PREFIX}${version}`;
 
 const ASSETS = [
-	...build,
+	...immutable.map(({ path }) => `/${path}`),
 	'/manifest.json',
 	'/favicon.svg',
 	'/pwa-icon-192.png',

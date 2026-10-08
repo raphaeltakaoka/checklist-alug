@@ -12,7 +12,7 @@
 		disablePushNotifications,
 		isPushSupported
 	} from '$lib/notifications';
-	import { PUBLIC_FIREBASE_VAPID_KEY } from '$env/static/public';
+	import { PUBLIC_FIREBASE_VAPID_KEY } from '$app/env/public';
 	import Icon from './Icon.svelte';
 	import Dialog from './Dialog.svelte';
 	let focused = $derived(page.url.pathname === '/dashboard/new');

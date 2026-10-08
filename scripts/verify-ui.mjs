@@ -101,6 +101,9 @@ await page.setBypassServiceWorker(true);
 const errors = [];
 const requests = [];
 const moduleRequests = [];
+// Keep API fixture state outside the page so requests racing with a reload
+// never try to evaluate JavaScript in a destroyed execution context.
+let failSync = true;
 page.on('pageerror', (error) => errors.push(error.message));
 page.on('dialog', dialog => dialog.accept());
 await page.evaluateOnNewDocument(
@@ -108,7 +111,6 @@ await page.evaluateOnNewDocument(
 		window.__fixtureReport = report;
 		window.__fixtureTasks = tasks;
 		window.__failSaves = false;
-		window.__failSync = true;
 		window.__fixtureReads = [];
 		window.__offline = location.protocol === 'http:' && sessionStorage.getItem('ui-offline') === 'true';
 		Object.defineProperty(navigator, 'onLine', {
@@ -233,8 +235,7 @@ page.on('request', async (request) => {
 		}
 		if (url.pathname.startsWith('/api/contacts/')) return json(request, { contact: { id: 'contact-test', uid: 'historical-test-uid', nome: 'Cliente de Teste' } });
 		if (url.pathname === '/api/checklists/sync') {
-			const fail = await page.evaluate(() => window.__failSync);
-			if (fail)
+			if (failSync)
 				return json(request, { error: 'Falha de envio simulada.' }, 503);
 			return json(request, { report: JSON.parse(request.postData()) });
 		}
@@ -618,8 +619,8 @@ try {
 	await page.evaluate(() => { window.__offline = true; });
 	await page.goto(base + '/dashboard');
 	await waitText('Você está offline');
+	failSync = false;
 	await page.evaluate(() => {
-		window.__failSync = false;
 		window.__offline = false;
 		sessionStorage.removeItem('ui-offline');
 		dispatchEvent(new Event('online'));

@@ -7,7 +7,7 @@ import {
 	PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
 	PUBLIC_FIREBASE_PROJECT_ID,
 	PUBLIC_FIREBASE_STORAGE_BUCKET
-} from '$env/static/public';
+} from '$app/env/public';
 
 const firebaseConfig = {
 	apiKey: PUBLIC_FIREBASE_API_KEY,

@@ -3,7 +3,7 @@ import { getAuth } from 'firebase-admin/auth';
 import { getFirestore } from 'firebase-admin/firestore';
 import { getMessaging } from 'firebase-admin/messaging';
 import { getStorage } from 'firebase-admin/storage';
-import { env } from '$env/dynamic/private';
+import * as env from '$app/env/private';
 
 function initializeAdmin() {
 	if (getApps().length > 0) return getApps()[0];
