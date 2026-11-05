@@ -4,7 +4,8 @@ Mobile-first SvelteKit PWA for vehicle inspections. It supports offline drafts a
 
 ## Local setup
 
-Requires Node.js 22.17 or newer. SvelteKit configuration lives in `vite.config.js`;
+Requires Node.js 24.12 or newer within the 24.x release line. The upper bound keeps
+Vercel builds on the runtime supported by the SvelteKit adapter. SvelteKit configuration lives in `vite.config.js`;
 the `$lib` alias is declared explicitly there and in `jsconfig.json`.
 TypeScript stays on 6.x to satisfy SvelteKit 3 and `svelte-check` peer dependencies.
 
