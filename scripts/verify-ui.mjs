@@ -110,6 +110,7 @@ await page.evaluateOnNewDocument(
 	(report, tasks) => {
 		window.__fixtureReport = report;
 		window.__fixtureTasks = tasks;
+		window.__taskError = null;
 		window.__failSaves = false;
 		window.__fixtureReads = [];
 		window.__offline = location.protocol === 'http:' && sessionStorage.getItem('ui-offline') === 'true';
@@ -177,6 +178,7 @@ page.on('request', async (request) => {
 		export async function getDoc(ref) { return { exists: () => true, id: ref.id, data: () => ({ ...window.__fixtureReport, id: ref.id, ...(ref.id === 'ui-linked-delivery' ? { contactId: 'contact-test', clientUid: 'historical-test-uid' } : {}) }) }; }
 		export async function getDocs(q) {
 			window.__fixtureReads.push(q); if(window.__offline) throw new Error('offline');
+			if (q.name === 'cards' && window.__taskError) throw Object.assign(new Error('Simulated task failure'), { code: window.__taskError });
 			const more = q.constraints.some(c => c.cursor);
 			const plateFilter = q.constraints.find(c => c.where?.[0] === 'licensePlate');
 			if (plateFilter && window.__delayHistory) await new Promise(resolve => setTimeout(resolve, 600));
@@ -765,6 +767,12 @@ try {
 	);
 	await click('Tarefas');
 	await waitText('Entrega — Mariana Costa');
+	const taskQuery = await page.evaluate(() => window.__fixtureReads.find(q => q.name === 'cards'));
+	assert.deepEqual(taskQuery.constraints.filter(c => c.where).map(c => c.where), [
+		['boardType', '==', 'operations'],
+		['assignedUserId', '==', ownerUid],
+		['state', '==', 'active']
+	], 'Tasks stay within the authorized board family and current assignee');
 	await captureAt(390, 'tasks-mobile');
 	await click('Entrega — Mariana Costa', false);
 	await waitText('Contrato.pdf');
@@ -790,8 +798,24 @@ try {
 	);
 	await page.keyboard.press('Escape');
 	await page.waitForFunction(() => !document.querySelector('dialog'));
+	for (const [code, message] of [
+		['permission-denied', 'Seu perfil não tem permissão'],
+		['unauthenticated', 'Sua sessão expirou'],
+		['failed-precondition', 'A consulta de tarefas está temporariamente indisponível'],
+		['unavailable', 'Verifique sua conexão'],
+		['unknown', 'Não foi possível carregar suas tarefas. Tente novamente.']
+	]) {
+		await page.evaluate(code => { window.__taskError = code; }, code);
+		await click('Atualizar');
+		await waitText(message);
+		assert(!(await text()).includes('Carregar mais tarefas'), 'Pagination stays hidden after a query failure');
+	}
+	await page.evaluate(() => { window.__taskError = null; });
+	await click('Tentar novamente');
+	await page.waitForFunction(() => !document.querySelector('[role="alert"]'));
+	await waitText('Entrega — Mariana Costa');
 	console.log(
-		'PASS tasks: detail dialog, image preview, attachment link, nested Escape/focus handling'
+		'PASS tasks: board and assignee scope, detail dialog, attachments, error messages and retry'
 	);
 	await page.goto(base + '/dashboard/new?deliveryId=ui-linked-delivery');
 	await waitText('Contato vinculado');

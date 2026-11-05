@@ -54,6 +54,7 @@
     try {
       const userId = authState.user.uid;
       const constraints = [
+        where("boardType", "==", "operations"),
         where("assignedUserId", "==", userId),
         where("state", "==", "active"),
         orderBy("dueDateKey", "asc"),
@@ -95,7 +96,23 @@
       hasMore = querySnapshot.size === 50;
     } catch (e) {
       console.error("Erro ao carregar tarefas do Firestore:", e);
-      errorMsg = "Ocorreu um erro ao carregar suas tarefas da nuvem. Verifique sua conexão.";
+      switch (e.code) {
+        case "permission-denied":
+          errorMsg = "Seu perfil não tem permissão para consultar as tarefas de operações. Solicite a revisão do seu acesso à administração.";
+          break;
+        case "unauthenticated":
+          errorMsg = "Sua sessão expirou. Entre novamente para carregar suas tarefas.";
+          break;
+        case "failed-precondition":
+          errorMsg = "A consulta de tarefas está temporariamente indisponível. Tente novamente em alguns instantes.";
+          break;
+        case "unavailable":
+        case "deadline-exceeded":
+          errorMsg = "Não foi possível conectar ao serviço de tarefas. Verifique sua conexão e tente novamente.";
+          break;
+        default:
+          errorMsg = "Não foi possível carregar suas tarefas. Tente novamente.";
+      }
     } finally {
       loading = false;
       loadingMore = false;
@@ -307,7 +324,7 @@
             }}>Limpar filtros</button
           >{/if}</EmptyState
       >{/if}
-    {#if hasMore}<div class="inline section" style="justify-content:center">
+    {#if hasMore && !errorMsg}<div class="inline section" style="justify-content:center">
         <button
           class="btn"
           disabled={loadingMore}

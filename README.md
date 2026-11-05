@@ -29,6 +29,13 @@ bundle. Server credentials remain private runtime variables. Authorization is en
 
 The authoritative `firestore.rules`, `storage.rules`, `firestore.indexes.json`, and emulator tests live in `crm-alug`. Do not create a divergent Checklist copy.
 
+Tasks query the `cards` collection group with `boardType == operations`, the signed-in
+user's `assignedUserId`, `state == active`, and ascending `dueDateKey`, in pages of 50.
+Migrated access profiles require `operations.read` in addition to Checklist access.
+The matching collection-group index (`boardType`, `assignedUserId`, `state`,
+`dueDateKey`, all ascending) is maintained in `crm-alug` and must be ready before
+publishing this query. Permission failures are reported separately from connection failures.
+
 ## Data model
 
 - `checklists/{id}` stores validated full reports with immutable `ownerUid`.
