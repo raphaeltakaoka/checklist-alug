@@ -73,56 +73,63 @@
 		content="Vistorias de veículos com fotos, assinatura e acesso offline."
 	/></svelte:head
 >
-<div class="login-page">
-	<div class="login-top">
-		<img src={logo} alt="Alug" /><span class="brand-title">Checklist</span>
+{#if authState.loading || authState.user}
+	<div class="loading-page" role="status">
+		<span class="spinner"></span>
+		<p>Carregando sua conta…</p>
 	</div>
-	<main class="login-wrap">
-		<span class="eyebrow">Portal do inspetor</span>
-		<h1>Pronto para a próxima vistoria.</h1>
-		<p>
-			Acesse sua conta para iniciar uma vistoria ou continuar de onde parou.
-		</p>
-		<form onsubmit={handleLogin} class="stack">
-			<Notice message={errorMessage || authState.error} />
-			<div class="field">
-				<label for="login-email">E-mail</label><input
-					id="login-email"
-					type="email"
-					autocomplete="username"
-					bind:value={email}
-					placeholder="voce@empresa.com.br"
-					required
-					disabled={isLoading}
-				/>
-			</div>
-			<div class="field">
-				<label for="login-pwd">Senha</label>
-				<div class="password-field">
-					<input
-						id="login-pwd"
-						type={showPassword ? 'text' : 'password'}
-						autocomplete="current-password"
-						bind:value={password}
-						placeholder="Sua senha"
+{:else}
+	<div class="login-page">
+		<div class="login-top">
+			<img src={logo} alt="Alug" /><span class="brand-title">Checklist</span>
+		</div>
+		<main class="login-wrap">
+			<span class="eyebrow">Portal do inspetor</span>
+			<h1>Pronto para a próxima vistoria.</h1>
+			<p>
+				Acesse sua conta para iniciar uma vistoria ou continuar de onde parou.
+			</p>
+			<form onsubmit={handleLogin} class="stack">
+				<Notice message={errorMessage || authState.error} />
+				<div class="field">
+					<label for="login-email">E-mail</label><input
+						id="login-email"
+						type="email"
+						autocomplete="username"
+						bind:value={email}
+						placeholder="voce@empresa.com.br"
 						required
 						disabled={isLoading}
-					/><button
-						type="button"
-						class="icon-button"
-						onclick={() => (showPassword = !showPassword)}
-						aria-label={showPassword ? 'Ocultar senha' : 'Mostrar senha'}
-						aria-pressed={showPassword}><Icon name="eye" /></button
-					>
+					/>
 				</div>
-			</div>
-			<button class="btn primary full" disabled={isLoading} type="submit"
-				>{#if isLoading}<span class="spinner"></span>Entrando…{:else}Entrar<Icon
-						name="arrow"
-						size={18}
-					/>{/if}</button
-			>
-		</form>
-	</main>
-	<p class="login-footer">Alug Locadora · Checklist de veículos</p>
-</div>
+				<div class="field">
+					<label for="login-pwd">Senha</label>
+					<div class="password-field">
+						<input
+							id="login-pwd"
+							type={showPassword ? 'text' : 'password'}
+							autocomplete="current-password"
+							bind:value={password}
+							placeholder="Sua senha"
+							required
+							disabled={isLoading}
+						/><button
+							type="button"
+							class="icon-button"
+							onclick={() => (showPassword = !showPassword)}
+							aria-label={showPassword ? 'Ocultar senha' : 'Mostrar senha'}
+							aria-pressed={showPassword}><Icon name="eye" /></button
+						>
+					</div>
+				</div>
+				<button class="btn primary full" disabled={isLoading} type="submit"
+					>{#if isLoading}<span class="spinner"></span>Entrando…{:else}Entrar<Icon
+							name="arrow"
+							size={18}
+						/>{/if}</button
+				>
+			</form>
+		</main>
+		<p class="login-footer">Alug Locadora · Checklist de veículos</p>
+	</div>
+{/if}
