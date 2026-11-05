@@ -1,6 +1,6 @@
 import { json } from "@sveltejs/kit";
 import { adminDb } from "$lib/server/admin";
-import { ApiError, apiErrorResponse, hasPermission, requireAuth } from "$lib/server/auth";
+import { ApiError, apiErrorResponse, canAccessInspection, hasPermission, requireAuth } from "$lib/server/auth";
 
 export async function GET({ request, url }) {
   try {
@@ -31,6 +31,7 @@ export async function GET({ request, url }) {
 
     for (const doc of snapshot.docs) {
       const data = doc.data();
+      if (!canAccessInspection(decodedToken, data, 'read')) continue;
       if (
         data.inspectionType === "Devolução" &&
         data.status === "completed" &&

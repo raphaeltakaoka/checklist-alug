@@ -116,7 +116,7 @@
 			<h1>Olá, {authState.displayName.split(' ')[0]}.</h1>
 			<p>Uma nova vistoria. Tudo em ordem.</p>
 		</div>
-		{#if authState.canInspect('write')}<a
+		{#if authState.canInspect('create')}<a
 				class="btn primary"
 				href="/dashboard/new"><Icon name="plus" />Nova vistoria</a
 			>{/if}

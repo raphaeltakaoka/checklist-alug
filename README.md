@@ -75,6 +75,28 @@ existing Admin SDK API authorization and contact search index, without deploying
 
 Browser clients may read data allowed by the shared rules, but all checklist Firestore mutations go through authenticated SvelteKit APIs. Inspectors can access only their own reports; administrators can access all reports.
 
+## Access profiles
+
+Checklist resolves the CRM's shared `user_access/{uid}` assignment and
+`access_profiles/{profileId}` on the server. Active assignments inherit profile
+permissions unless an individual override is present. Existing inactive or malformed
+assignments deny access; old token roles are used only for accounts without an
+assignment when `access_control/state.allowLegacy` explicitly permits it (or no
+migration state exists).
+
+Login loads effective grants through `GET /api/auth/access`. Starting a new inspection
+requires `checklists.create`, modifying a cloud report requires `checklists.update`,
+and other owners' reports require the matching `checklists.all.*` grant. The API
+rechecks current policy on every request. Contact and vehicle lookups also require
+`contacts.read` and `fleet.vehicles.read`, respectively; notifications use
+`notifications.send` independently of checklist permissions.
+
+For offline drafts, the browser caches the last verified grants separately per UID.
+An explicit access denial clears that account's cache. Reopening online refreshes
+the profile; cached UI grants never authorize a server write. Existing shared
+Firestore and Storage rules already resolve these same policy documents, so this
+change requires no rules, indexes, environment variables, or token-claim expansion.
+
 ## Deployment
 
 The application uses `@sveltejs/adapter-vercel`. Configure every variable in `.env.example` in the Vercel `checklist-alug` project, including the server-only service account. Follow [docs/FIREBASE_ROLLOUT.md](docs/FIREBASE_ROLLOUT.md) for the atomic rollout and rollback procedure.

@@ -5,7 +5,7 @@ import {
 	ApiError,
 	apiErrorResponse,
 	requireAuth,
-	requirePermission
+	requireNotificationPermission
 } from '$lib/server/auth';
 import { boundedString, readExactJson } from '$lib/server/requestValidation';
 
@@ -39,7 +39,7 @@ async function enforceRateLimit(uid) {
 export async function POST({ request }) {
 	try {
 		const decodedToken = await requireAuth(request);
-		requirePermission(decodedToken, 'administrator', 'write');
+		requireNotificationPermission(decodedToken);
 		const payload = await readExactJson(request, ['userId', 'title', 'body']);
 		const userId = boundedString(payload.userId, 'userId', { max: 128 });
 		const title = boundedString(payload.title, 'title', { max: 100 });

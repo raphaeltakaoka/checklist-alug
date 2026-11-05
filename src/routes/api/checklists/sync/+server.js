@@ -23,6 +23,7 @@ export async function POST({ request }) {
     if (contentLength > 250_000) throw new ApiError(413, "Inspection payload is too large.");
     const decodedToken = await requireAuth(request);
     if (
+      !hasPermission(decodedToken, "operations", "create") &&
       !hasPermission(decodedToken, "operations", "write") &&
       !hasPermission(decodedToken, "administrator", "write")
     ) {
@@ -45,6 +46,9 @@ export async function POST({ request }) {
           ? existingSummary.data()
           : null;
       if (existingData) assertInspectionAccess(decodedToken, existingData, "write");
+      else if (!hasPermission(decodedToken, 'operations', 'create')) {
+        throw new ApiError(403, 'Insufficient permissions.');
+      }
 
       const expectedOwnerUid = existingData?.ownerUid || decodedToken.uid;
       report = validateChecklistPayload(payload, expectedOwnerUid);

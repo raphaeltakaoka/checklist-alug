@@ -5,7 +5,7 @@ import { contactSelection, validateContactId } from '$lib/server/contacts';
 
 export async function GET({ request, params }) {
 	try {
-		requireCatalogReadPermission(await requireAuth(request));
+		requireCatalogReadPermission(await requireAuth(request), 'contacts');
 		const snapshot = await adminDb.collection('contacts').doc(validateContactId(params.id)).get();
 		return json({ contact: contactSelection(snapshot) }, { headers: { 'cache-control': 'no-store' } });
 	} catch (error) {

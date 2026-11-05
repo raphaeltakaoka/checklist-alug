@@ -5,7 +5,7 @@ import { searchContacts } from '$lib/server/contacts';
 
 export async function GET({ request, url }) {
 	try {
-		requireCatalogReadPermission(await requireAuth(request));
+		requireCatalogReadPermission(await requireAuth(request), 'contacts');
 		return json({ contacts: await searchContacts(adminDb, url.searchParams.get('q') || '') }, {
 			headers: { 'cache-control': 'no-store' }
 		});

@@ -1,11 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ verifyIdToken: vi.fn(), getAll: vi.fn(), get: vi.fn(), set: vi.fn() }));
+const mocks = vi.hoisted(() => ({ verifyIdToken: vi.fn(), getAll: vi.fn(), get: vi.fn(), set: vi.fn(), policyGet: vi.fn() }));
 vi.mock('$lib/server/admin', () => ({
 	adminAuth: { verifyIdToken: mocks.verifyIdToken },
 	adminStorage: {},
 	adminDb: {
-		collection: collection => ({ doc: id => ({ collection, id }) }),
+		collection: collection => ({ doc: id => ['user_access', 'access_control', 'access_profiles'].includes(collection)
+			? { get: () => mocks.policyGet(collection, id) } : { collection, id } }),
 		runTransaction: async callback => callback({ getAll: mocks.getAll, get: mocks.get, set: mocks.set })
 	}
 }));
@@ -32,10 +33,34 @@ function sync(body = payload(), authorization = 'Bearer token') {
 	}) });
 }
 beforeEach(() => {
+	mocks.policyGet.mockReset().mockResolvedValue({ exists: false });
 	mocks.verifyIdToken.mockReset().mockResolvedValue({ uid: 'owner-a', roles: { operations: ['write'] } });
 	mocks.getAll.mockReset().mockResolvedValue([absent, absent]);
 	mocks.get.mockReset().mockImplementation(withContact(document({ nome: 'Maria', uid: 'authoritative-uid' })));
 	mocks.set.mockReset();
+});
+
+describe('shared profile permissions during sync', () => {
+	function profile(permissions) {
+		mocks.verifyIdToken.mockResolvedValue({ uid: 'owner-a', roles: { operations: ['read'] } });
+		mocks.policyGet.mockImplementation(async name => ({ exists: true, data: () => name === 'user_access'
+			? { schemaVersion: 1, active: true, profileId: 'base-operations', overrides: {} }
+			: { schemaVersion: 1, permissions } }));
+	}
+	it('creates a checklist from the global profile despite read-only legacy claims', async () => {
+		profile({ 'checklists.create': true, 'checklists.update': true });
+		expect((await sync()).status).toBe(200);
+	});
+	it('separates create from update and rejects read-only profiles', async () => {
+		profile({ 'checklists.read': true });
+		expect((await sync()).status).toBe(403);
+		profile({ 'checklists.update': true });
+		expect((await sync()).status).toBe(403);
+		profile({ 'checklists.create': true });
+		mocks.getAll.mockResolvedValue([document({ schemaVersion: 3, ownerUid: 'owner-a' }), absent]);
+		expect((await sync()).status).toBe(403);
+		expect(mocks.set).not.toHaveBeenCalled();
+	});
 });
 
 describe('catalog validation during checklist sync', () => {

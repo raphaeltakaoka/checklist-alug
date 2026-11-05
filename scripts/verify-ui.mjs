@@ -145,7 +145,7 @@ page.on('request', async (request) => {
 	if (url.pathname === '/src/lib/auth.svelte.js')
 		return js(
 			request,
-			`export const authState = { loading: false, user: { uid: '${ownerUid}', email: 'inspetor@example.test' }, displayName: 'Rafael Teste', hasPermission: (group, action) => group === 'operations' && ['read','write','delete'].includes(action), canInspect: (action) => ['read','write','delete'].includes(action) };`
+			`export const authState = { loading: false, user: { uid: '${ownerUid}', email: 'inspetor@example.test' }, displayName: 'Rafael Teste', hasPermission: (group, action) => group === 'operations' && ['read','write','create','update','delete'].includes(action), canInspect: (action) => ['read','write','create','update','delete'].includes(action) };`
 		);
 	if (url.pathname === '/src/lib/firebase.js')
 		return js(

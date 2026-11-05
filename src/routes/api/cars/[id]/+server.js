@@ -5,7 +5,7 @@ import { carSelection, validateCarId } from '$lib/server/cars';
 
 export async function GET({ request, params }) {
 	try {
-		requireCatalogReadPermission(await requireAuth(request));
+		requireCatalogReadPermission(await requireAuth(request), 'cars');
 		const snapshot = await adminDb.collection('cars').doc(validateCarId(params.id)).get();
 		return json({ car: carSelection(snapshot) }, { headers: { 'cache-control': 'no-store' } });
 	} catch (error) {

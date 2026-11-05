@@ -5,7 +5,7 @@ import { searchCars } from '$lib/server/cars';
 
 export async function GET({ request, url }) {
 	try {
-		requireCatalogReadPermission(await requireAuth(request));
+		requireCatalogReadPermission(await requireAuth(request), 'cars');
 		return json({ cars: await searchCars(adminDb, url.searchParams.get('q') || '') }, {
 			headers: { 'cache-control': 'no-store' }
 		});

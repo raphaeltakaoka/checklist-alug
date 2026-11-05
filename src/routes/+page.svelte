@@ -31,31 +31,8 @@
 
 		try {
 			// Authenticate via Firebase
-			const userCredential = await signInWithEmailAndPassword(
-				auth,
-				trimmedEmail,
-				password
-			);
-			const user = userCredential.user;
-
-			// Verify custom claims roles
-			const idTokenResult = await user.getIdTokenResult(true);
-			const roles = idTokenResult.claims?.roles;
-			const canUseChecklist =
-				(Array.isArray(roles?.operations) &&
-					roles.operations.includes('read')) ||
-				(Array.isArray(roles?.administrator) &&
-					roles.administrator.includes('read'));
-
-			if (!canUseChecklist) {
-				await auth.signOut();
-				errorMessage =
-					'Acesso negado. Esta conta não possui permissão de leitura do Checklist.';
-				hasError = true;
-				isLoading = false;
-				return;
-			}
-
+			await signInWithEmailAndPassword(auth, trimmedEmail, password);
+			// AuthState resolves the current shared profile before opening the dashboard.
 			goto('/dashboard');
 		} catch (error) {
 			console.error('Firebase Auth Error:', error.code, error.message);
@@ -107,7 +84,7 @@
 			Acesse sua conta para iniciar uma vistoria ou continuar de onde parou.
 		</p>
 		<form onsubmit={handleLogin} class="stack">
-			<Notice message={errorMessage} />
+			<Notice message={errorMessage || authState.error} />
 			<div class="field">
 				<label for="login-email">E-mail</label><input
 					id="login-email"

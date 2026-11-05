@@ -1,9 +1,15 @@
 import { adminAuth } from '$lib/server/admin';
 import { ApiError } from '$lib/server/errors';
+import { resolveAccess } from '$lib/server/accessControl';
+import { can, canInspect, canUseChecklist } from '$lib/accessControl.js';
 
 export { ApiError } from '$lib/server/errors';
 
 export function hasPermission(decodedToken, department, action) {
+	if (decodedToken?.accessVersion === 1) {
+		if (!['operations', 'administrator'].includes(department)) return false;
+		return canInspect(decodedToken, action, department === 'administrator');
+	}
 	const permissions = decodedToken?.roles?.[department];
 	return Array.isArray(permissions) && permissions.includes(action);
 }
@@ -13,11 +19,13 @@ export async function requireAuth(request) {
 	const match = authorization.match(/^Bearer\s+(.+)$/i);
 	if (!match) throw new ApiError(401, 'Authentication required.');
 
+	let identity;
 	try {
-		return await adminAuth.verifyIdToken(match[1], true);
+		identity = await adminAuth.verifyIdToken(match[1], true);
 	} catch {
 		throw new ApiError(401, 'Invalid or expired authentication token.');
 	}
+	return resolveAccess(identity);
 }
 
 export function requirePermission(decodedToken, department, action) {
@@ -26,8 +34,20 @@ export function requirePermission(decodedToken, department, action) {
 	}
 }
 
-export function requireCatalogReadPermission(decodedToken) {
+export function requireCatalogReadPermission(decodedToken, catalog) {
+	if (decodedToken?.accessVersion === 1) {
+		if (!canUseChecklist(decodedToken) || !can(decodedToken, catalog === 'contacts' ? 'contacts.read' : 'fleet.vehicles.read')) {
+			throw new ApiError(403, 'Insufficient permissions.');
+		}
+		return;
+	}
 	if (!hasPermission(decodedToken, 'operations', 'read') && !hasPermission(decodedToken, 'administrator', 'read')) {
+		throw new ApiError(403, 'Insufficient permissions.');
+	}
+}
+
+export function requireNotificationPermission(identity) {
+	if (identity?.accessVersion === 1 ? !can(identity, 'notifications.send') : !hasPermission(identity, 'administrator', 'write')) {
 		throw new ApiError(403, 'Insufficient permissions.');
 	}
 }

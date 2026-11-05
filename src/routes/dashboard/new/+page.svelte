@@ -475,6 +475,12 @@
     }
   }
   onMount(() => {
+    if (!authState.canInspect('create')) {
+      loadError = 'Seu perfil não permite criar vistorias.';
+      hydrated = true;
+      allowLeave = true;
+      return;
+    }
     alive = true;
     writer = createInspectionWriter(saveInspection, (state, error) => {
       saveState = state;

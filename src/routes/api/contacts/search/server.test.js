@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({ verifyIdToken: vi.fn(), get: vi.fn(), getDoc: vi.fn() }));
 vi.mock('$lib/server/admin', () => ({
 	adminAuth: { verifyIdToken: mocks.verifyIdToken },
-	adminDb: { collection: () => ({ where: () => ({ limit: () => ({ get: mocks.get }) }), doc: () => ({ get: mocks.getDoc }) }) }
+	adminDb: { collection: name => (['user_access', 'access_control'].includes(name) ? { doc: () => ({ get: async () => ({ exists: false }) }) } : ({ where: () => ({ limit: () => ({ get: mocks.get }) }), doc: () => ({ get: mocks.getDoc }) })) }
 }));
 
 const { GET } = await import('./+server.js');
