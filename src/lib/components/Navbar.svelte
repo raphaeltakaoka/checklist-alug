@@ -25,12 +25,19 @@
 		{ href: '/dashboard/checklists', label: 'Histórico', icon: 'list' },
 		{ href: '/dashboard/tarefas', label: 'Tarefas', icon: 'tasks' }
 	];
-	onMount(async () => {
-		pushSupported = await isPushSupported();
-		if (pushSupported)
-			enabled =
-				Notification.permission === 'granted' &&
-				localStorage.getItem('push_notifications_enabled') !== 'false';
+	onMount(() => {
+		const updateEnabled = () => {
+			enabled = true;
+		};
+		window.addEventListener('checklist-push-enabled', updateEnabled);
+		void (async () => {
+			pushSupported = await isPushSupported();
+			if (pushSupported)
+				enabled =
+					Notification.permission === 'granted' &&
+					localStorage.getItem('push_notifications_enabled') !== 'false';
+		})();
+		return () => window.removeEventListener('checklist-push-enabled', updateEnabled);
 	});
 	async function toggleNotifications() {
 		if (!PUBLIC_FIREBASE_VAPID_KEY) {
@@ -46,10 +53,7 @@
 			if (success) {
 				enabled = !enabled;
 				localStorage.setItem('push_notifications_enabled', String(enabled));
-				notify(
-					enabled ? 'Notificações ativadas.' : 'Notificações desativadas.',
-					'success'
-				);
+				notify(enabled ? 'Notificações ativadas.' : 'Notificações desativadas.', 'success');
 			} else
 				notify(
 					'Não foi possível alterar as notificações. Verifique a permissão do navegador.',
@@ -79,19 +83,17 @@
 <header class="app-header print-hidden">
 	<div class="header-inner">
 		<a href="/dashboard" class="brand" aria-label="Checklist Alug — início"
-			><img src={logo} alt="Alug" /><span class="brand-title">Checklist</span
-			></a
+			><img src={logo} alt="Alug" /><span class="brand-title">Checklist</span></a
 		>
 		{#if focused}
 			<button
 				class="text-action"
 				disabled={ui.inspectionBusy || !ui.saveAndExit}
-				onclick={() => ui.saveAndExit?.()}
-				><Icon name="save" size={17} />Salvar e sair</button
+				onclick={() => ui.saveAndExit?.()}><Icon name="save" size={17} />Salvar e sair</button
 			>
 		{:else}
 			<nav class="main-nav" aria-label="Navegação principal">
-				{#each links as link}<a
+				{#each links as link (link.href)}<a
 						href={link.href}
 						aria-current={(
 							link.href === '/dashboard'
@@ -117,10 +119,7 @@
 			<h3>{authState.displayName}</h3>
 			<p class="muted">{authState.user?.email}</p>
 		</div>
-		{#if pushSupported}<button
-				class="account-row"
-				disabled={busy}
-				onclick={toggleNotifications}
+		{#if pushSupported}<button class="account-row" disabled={busy} onclick={toggleNotifications}
 				><Icon name="bell" /><span>Notificações</span><small
 					>{enabled ? 'Ativadas' : 'Desativadas'}</small
 				></button

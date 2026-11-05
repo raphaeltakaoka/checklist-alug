@@ -3,6 +3,7 @@
 	import { authState } from '$lib/auth.svelte.js';
 	import { ui } from '$lib/ui.svelte.js';
 	import Navbar from '$lib/components/Navbar.svelte';
+	import PushNotificationPrompt from '$lib/components/PushNotificationPrompt.svelte';
 	import Notice from '$lib/components/Notice.svelte';
 	let { children } = $props();
 	$effect(() => {
@@ -17,6 +18,7 @@
 	</div>
 {:else if authState.user}
 	<Navbar />
+	<PushNotificationPrompt />
 	{#if ui.notice}<div class="global-notice">
 			<Notice
 				message={ui.notice.message}
