@@ -1,3 +1,5 @@
+import { isValidLocation } from '$lib/inspectionLocation.js';
+
 /** Validation shared by step links, Continue, and final submission. */
 export function inspectionErrors(report, throughStep = 1) {
 	const errors = {};
@@ -29,6 +31,8 @@ export function inspectionErrors(report, throughStep = 1) {
 			errors.partStates = 'Use até 1.000 caracteres por descrição de dano.';
 	}
 	if (throughStep >= 4) {
+		if (!isValidLocation(report.location))
+			errors.location = 'Obtenha a localização atual antes de concluir.';
 		if (!report.clientSignatureName?.trim() || report.clientSignatureName.length > 200)
 			errors.clientSignatureName = 'Informe o nome de quem assina (até 200 caracteres).';
 		if (!report.clientLicensePhoto)

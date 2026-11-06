@@ -3,7 +3,8 @@ import { validateChecklistPayload } from "./checklistValidation.js";
 
 function validPayload(overrides = {}) {
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
+    location: { latitude: -23.55052, longitude: -46.633308, accuracy: 12, capturedAt: '2026-11-06T12:00:00.000Z' },
     id: "ins-valid",
     ownerUid: "owner-a",
     licensePlate: "ABC1D23",
@@ -40,16 +41,23 @@ function validPayload(overrides = {}) {
 }
 
 describe("checklist server validation", () => {
-  it('requires a contact and signer in version 3, leaving the UID for authoritative resolution', () => {
-    const payload = validPayload({ schemaVersion: 3, contactId: 'contact-id', clientUid: 'forged', clientSignatureName: ' Representante ' });
+  it.each([null, undefined, {}, { latitude: 91, longitude: 0, accuracy: 0, capturedAt: '2026-11-06T12:00:00.000Z' }])('rejects missing or invalid location %j', location => {
+    expect(() => validateChecklistPayload(validPayload({ location }), 'owner-a')).toThrow('Localização inválida');
+  });
+  it('keeps location only in the complete report', () => {
+    const payload = validPayload();
+    expect(validateChecklistPayload(payload, 'owner-a').location).toEqual(payload.location);
+  });
+  it('requires a contact and signer in version 4, leaving the UID for authoritative resolution', () => {
+    const payload = validPayload({ schemaVersion: 4, contactId: 'contact-id', clientUid: 'forged', clientSignatureName: ' Representante ' });
     const report = validateChecklistPayload(payload, 'owner-a');
-    expect(report).toMatchObject({ schemaVersion: 3, contactId: 'contact-id', clientUid: null, clientSignatureName: 'Representante' });
+    expect(report).toMatchObject({ schemaVersion: 4, contactId: 'contact-id', clientUid: null, clientSignatureName: 'Representante' });
     for (const override of [{ carId: null }, { carId: '../unsafe' }, { contactId: null }, { contactId: '../unsafe' }, { clientSignatureName: '   ' }, { clientSignatureName: 'A'.repeat(201) }]) {
       expect(() => validateChecklistPayload({ ...payload, ...override }, 'owner-a')).toThrow();
     }
   });
 
-  it.each([undefined, 1, 2, 4])('rejects unsupported schema version %s', schemaVersion => {
+  it.each([undefined, 1, 2, 3, 5])('rejects unsupported schema version %s', schemaVersion => {
     expect(() => validateChecklistPayload(validPayload({ schemaVersion }), 'owner-a')).toThrow('Unsupported inspection schema version.');
   });
   it("accepts and normalizes a bounded owner-scoped report", () => {

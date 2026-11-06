@@ -16,6 +16,7 @@ import {
 import { readJson } from "$lib/server/requestValidation";
 import { contactSelection } from '$lib/server/contacts';
 import { carSelection } from '$lib/server/cars';
+import { sameLocation } from '$lib/inspectionLocation.js';
 
 export async function POST({ request }) {
   try {
@@ -52,6 +53,9 @@ export async function POST({ request }) {
 
       const expectedOwnerUid = existingData?.ownerUid || decodedToken.uid;
       report = validateChecklistPayload(payload, expectedOwnerUid);
+      if (existing.exists && !sameLocation(existing.data().location, report.location)) {
+        throw new ApiError(400, 'A localização de uma vistoria sincronizada não pode ser alterada.');
+      }
       const contact = contactSelection(await transaction.get(adminDb.collection('contacts').doc(report.contactId)));
       report.clientUid = contact.uid;
       const car = carSelection(await transaction.get(adminDb.collection('cars').doc(report.carId)));

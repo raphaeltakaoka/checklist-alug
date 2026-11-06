@@ -20,7 +20,8 @@ const imageFile = path.join(output, 'fixture-photo.png');
 await writeFile(imageFile, image);
 const ownerUid = 'ui-test-inspector';
 const fixtureReport = {
-	schemaVersion: 3,
+	schemaVersion: 4,
+	location: { latitude: -23.55052, longitude: -46.633308, accuracy: 12, capturedAt: '2026-11-06T12:00:00.000Z' },
 	id: 'ui-synced',
 	ownerUid,
 	licensePlate: 'DEF4G56',
@@ -93,6 +94,7 @@ const browser = await puppeteer.launch({
 		process.env.CHROME_PATH ||
 		'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
 	headless: true,
+	protocolTimeout: 30_000,
 	args: ['--no-sandbox']
 });
 const page = await browser.newPage();
@@ -104,6 +106,7 @@ const moduleRequests = [];
 // Keep API fixture state outside the page so requests racing with a reload
 // never try to evaluate JavaScript in a destroyed execution context.
 let failSync = true;
+let failMaps = false;
 page.on('pageerror', (error) => errors.push(error.message));
 page.on('dialog', dialog => dialog.accept());
 await page.evaluateOnNewDocument(
@@ -113,6 +116,22 @@ await page.evaluateOnNewDocument(
 		window.__taskError = null;
 		window.__failSaves = false;
 		window.__fixtureReads = [];
+		window.__geoRequests = [];
+		window.__geoCallbacks = [];
+		window.__geoHold = false;
+		window.__geoError = 0;
+		window.__geoLatitude = -23.55052;
+		Object.defineProperty(navigator, 'geolocation', {
+			configurable: true,
+			value: { getCurrentPosition(success, error, options) {
+				window.__geoRequests.push(options);
+				const code = window.__geoError;
+				const position = { coords: { latitude: window.__geoLatitude, longitude: -46.633308, accuracy: 12 }, timestamp: Date.now() };
+				const respond = () => code ? error({ code }) : success(position);
+				if (window.__geoHold) window.__geoCallbacks.push(respond);
+				else setTimeout(respond, 10);
+			} }
+		});
 		window.__offline = location.protocol === 'http:' && sessionStorage.getItem('ui-offline') === 'true';
 		Object.defineProperty(navigator, 'onLine', {
 			configurable: true,
@@ -136,6 +155,10 @@ page.on('request', async (request) => {
 	if (url.pathname.includes('/src/lib/')) moduleRequests.push(url.pathname);
 	if (url.protocol === 'data:' || url.protocol === 'blob:')
 		return request.continue();
+	if (url.hostname === 'maps.googleapis.com') {
+		if (failMaps) return request.abort();
+		return request.respond({ status: 200, contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="320" viewBox="0 0 640 320"><rect width="640" height="320" fill="#eef1e8"/><path d="M0 80H640M0 220H640M140 0V320M480 0V320" stroke="white" stroke-width="24"/><path d="M300 0L340 320" stroke="#d3d9d1" stroke-width="20"/><circle cx="320" cy="160" r="13" fill="#b42c25"/><text x="12" y="300" font-size="14">Mapa simulado · dados de teste</text></svg>' });
+	}
 	if (url.hostname === 'ui-fixtures.invalid')
 		return request.respond({
 			status: 200,
@@ -143,6 +166,8 @@ page.on('request', async (request) => {
 			body: image
 		});
 	if (url.origin !== new URL(base).origin) return request.abort();
+	if (url.pathname.endsWith('/runtime/app/env/public/index.js'))
+		return js(request, `export const PUBLIC_FIREBASE_VAPID_KEY = ''; export const PUBLIC_GOOGLE_MAPS_STATIC_API_KEY = sessionStorage.getItem('ui-map-disabled') ? '' : 'ui-restricted-maps-key';`);
 	if (url.pathname === '/src/lib/auth.svelte.js')
 		return js(
 			request,
@@ -328,7 +353,8 @@ async function fillClient(value) {
 	}, value);
 }
 async function screenshot(name, fullPage = false) {
-	await page.screenshot({ path: path.join(output, name + '.png'), fullPage });
+	await page.bringToFront();
+	await page.screenshot({ path: path.join(output, name + '.png'), fullPage, captureBeyondViewport: fullPage });
 }
 async function noOverflow() {
 	assert.equal(
@@ -549,7 +575,32 @@ try {
 		'Discard restores page scrolling'
 	);
 
+	await page.evaluate(() => { window.__geoHold = true; });
 	await click('Continuar');
+	await waitText('Obtendo localização atual');
+	assert.equal(await page.$eval('.inspection-actions .primary', el => el.disabled), true);
+	assert.equal(await page.$$eval('.inspection-location input, .inspection-location textarea', els => els.length), 0, 'Location has no editable fields');
+	await click('Detalhes', false);
+	await click('Conclusão', false);
+	assert.equal(await page.evaluate(() => window.__geoRequests.length), 1, 'Returning while GPS is pending must not create simultaneous native requests');
+	await page.evaluate(() => {
+		window.__geoError = 1;
+		window.__geoHold = false;
+		window.__geoCallbacks.shift()();
+	});
+	await waitText('Permissão de localização negada');
+	assert.equal(await page.$eval('.inspection-actions .primary', el => el.disabled), true);
+	assert(!(await text()).includes('Localização capturada automaticamente'), 'The canceled GPS result must be ignored');
+	await page.evaluate(() => { window.__geoError = 0; });
+	await click('Tentar novamente');
+	await waitText('Localização capturada automaticamente');
+	await page.waitForFunction(() => document.querySelector('img.location-map')?.naturalWidth > 0);
+	const map = new URL(await page.$eval('img.location-map', el => el.src));
+	assert.equal(map.searchParams.get('zoom'), '16');
+	assert.equal(map.searchParams.get('size'), '640x320');
+	assert.equal(map.searchParams.get('scale'), '2');
+	assert.equal(map.searchParams.get('markers'), '-23.55052,-46.633308');
+	await screenshot('location-map-mobile');
 	await waitText('Foto da CNH');
 	assert.equal(await page.$eval('#signature-name', el => el.value), 'Cliente de Teste');
 	await page.$eval('#signature-name', el => {
@@ -568,7 +619,12 @@ try {
 	await fillClient('Cliente de Teste');
 	await waitText('cliente@example.test');
 	await click('Cliente de Teste', false);
+	failMaps = true;
+	await page.evaluate(() => { window.__geoLatitude = -22.9; });
 	await click('Conclusão', false);
+	await waitText('Mapa indisponível');
+	assert((await text()).includes('-22.900000'), 'Reentering conclusion captures the current position');
+	assert.equal(await page.$eval('.inspection-actions .primary', el => el.disabled), false, 'Map failure does not block completion');
 	await page.waitForSelector('#signature-name');
 	assert.equal(await page.$eval('#signature-name', el => el.value), 'Representante de Teste', 'Changing contact must preserve signer edits');
 	const licenseFiles = await page.$$('input[type=file]');
@@ -588,6 +644,19 @@ try {
 				'Peça ao cliente para assinar antes de concluir.'
 			)
 	);
+	await click('Salvar e sair');
+	await waitText('Olá, Rafael.');
+	const locationDraft = await page.evaluate(async () => (await (await import('/src/lib/db.js')).getAllInspections('ui-test-inspector')).find(r => r.licensePlate === 'XYZ9A87'));
+	assert.equal(locationDraft.location.latitude, -22.9, 'Draft saves the acquired position');
+	await page.goto(base + `/dashboard/new?id=${locationDraft.id}`);
+	await waitText('Contato vinculado');
+	await page.evaluate(() => { window.__geoHold = true; window.__geoLatitude = -22.8; });
+	await click('Conclusão', false);
+	await waitText('Obtendo localização atual');
+	assert.equal(await page.$eval('.inspection-actions .primary', el => el.disabled), true, 'A restored location cannot bypass recapture');
+	await page.evaluate(() => { window.__geoCallbacks.shift()(); });
+	await waitText('Localização capturada automaticamente');
+	assert((await text()).includes('-22.800000'));
 	await captureAt(390, 'form-conclusion-mobile');
 	await page.evaluate(() => {
 		window.__offline = true;
@@ -605,7 +674,10 @@ try {
 	);
 	assert.equal(completed.status, 'completed');
 	assert.equal(completed.syncState, 'queued');
-	assert.equal(completed.schemaVersion, 3);
+	assert.equal(completed.schemaVersion, 4);
+	assert.equal(completed.location.latitude, -22.8);
+	assert.equal(completed.location.accuracy, 12);
+	assert(Number.isFinite(Date.parse(completed.location.capturedAt)));
 	assert.equal(completed.carId, 'car-test');
 	assert.equal(completed.contactId, 'contact-test');
 	assert.equal(completed.clientUid, 'historical-test-uid');
@@ -613,9 +685,23 @@ try {
 	await page.evaluate(() => { sessionStorage.setItem('ui-offline', 'true'); });
 	await page.goto(base + `/dashboard/new/${completed.id}`);
 	await waitText('Laudo de vistoria');
+	await waitText('Mapa indisponível');
+	assert((await text()).includes('-22.800000'));
+	assert.equal(await page.evaluate(() => window.__geoRequests.length), 0, 'Opening a completed report must not recapture location');
+	await page.evaluate(() => { sessionStorage.setItem('ui-map-disabled', 'true'); });
+	await page.reload();
+	await waitText('Mapa indisponível');
+	assert.equal(await page.$('img.location-map'), null, 'Missing API key falls back to coordinates');
+	await page.evaluate(() => { sessionStorage.removeItem('ui-map-disabled'); });
+	failMaps = false;
+	await page.reload();
+	await waitText('Laudo de vistoria');
+	await page.waitForFunction(() => document.querySelector('img.location-map')?.naturalWidth > 0);
 	assert((await text()).includes('Representante de Teste'));
 	assert.equal(await page.$eval('img.report-signature', el => el.alt), 'Assinatura de Representante de Teste');
 	await page.emulateMediaType('print');
+	assert.equal(await page.$eval('.inspection-location', el => getComputedStyle(el).display !== 'none'), true);
+	assert.equal(await page.$eval('img.location-map', el => getComputedStyle(el).display !== 'none'), true);
 	await page.pdf({ path: path.join(output, 'contact-signer-report-print.pdf'), format: 'A4', printBackground: true });
 	await page.emulateMediaType('screen');
 	await page.evaluate(() => { window.__offline = true; });
@@ -831,6 +917,7 @@ try {
 	).find(r => r.deliveryChecklistId === 'ui-linked-delivery'));
 	assert.equal(deliveryDraft.carId, 'car-fixture');
 	assert.equal(deliveryDraft.clientUid, 'historical-test-uid');
+	assert.equal(deliveryDraft.location, null, 'A return must not inherit the delivery location');
 	await page.goto(base + `/dashboard/new?id=${deliveryDraft.id}`);
 	await waitText('Contato vinculado');
 	assert.equal(await page.$eval('#client', el => el.readOnly), true);
@@ -868,9 +955,10 @@ try {
 	assert.deepEqual(errors, [], 'No browser runtime errors');
 	assert(
 		requests.some(
-			(r) => r.path === '/api/checklists/sync' && r.body?.schemaVersion === 3 && r.body?.carId === 'car-test' && r.body?.contactId === 'contact-test' && r.body?.clientSignatureName === 'Representante de Teste'
+			(r) => r.path === '/api/checklists/sync' && r.body?.schemaVersion === 4 && r.body?.location?.latitude === -22.8 && r.body?.carId === 'car-test' && r.body?.contactId === 'contact-test' && r.body?.clientSignatureName === 'Representante de Teste'
 		)
 	);
+	console.log('PASS location: automatic capture, denial/retry, stale response, recapture and draft reload, static map/fallback, offline persistence/sync, report and print');
 	await writeFile(
 		path.join(output, 'results.json'),
 		JSON.stringify(

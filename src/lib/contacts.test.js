@@ -10,7 +10,7 @@ describe('inspection contact and signer', () => {
 		expect(contactNameMatches('Maria Silva', '')).toBe(false);
 	});
 	it('keeps the signer independent when linking and unlinking, including distinct UIDs', () => {
-		const report = { schemaVersion: 3, clientSignatureName: 'Representante' };
+		const report = { schemaVersion: 4, clientSignatureName: 'Representante' };
 		linkInspectionContact(report, { id: 'document-id', uid: 'historical-uid', nome: 'Maria' });
 		expect(report).toMatchObject({ contactId: 'document-id', clientUid: 'historical-uid', clientName: 'Maria' });
 		unlinkInspectionContact(report);
@@ -26,7 +26,7 @@ describe('inspection contact and signer', () => {
 		expect(report.clientSignatureName).toBe('');
 	});
 	it('requires a contact instead of typed text and the signer only at completion', () => {
-		const report = { schemaVersion: 3, clientName: 'Nome manual', clientSignatureName: '   ' };
+		const report = { schemaVersion: 4, clientName: 'Nome manual', clientSignatureName: '   ' };
 		expect(inspectionErrors(report, 1).clientName).toContain('Selecione');
 		expect(inspectionErrors(report, 1).clientSignatureName).toBeUndefined();
 		expect(inspectionErrors(report, 4).clientSignatureName).toBeTruthy();

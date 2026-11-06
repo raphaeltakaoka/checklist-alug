@@ -55,11 +55,46 @@ preserves the inspector's owner filter, and sorts the matching reports newest fi
 The plate query uses equality filters without a date ordering clause, so it does
 not require a new composite index. Clearing the plate restores the paginated history.
 
-New inspections use `schemaVersion: 3` and require a registered contact and vehicle.
+New inspections use `schemaVersion: 4` and require a registered contact and vehicle.
 `carId` stores the `cars` document ID. `contactId` stores the
 `contacts` document ID, `clientUid` stores its authoritative `uid` (falling back to the document ID),
-and `clientSignatureName` stores the independent name of the signer. Only version 3 is supported;
+and `clientSignatureName` stores the independent name of the signer. Only version 4 is supported;
 other schema versions are rejected without conversion. No IndexedDB version upgrade is needed.
+
+Completed reports require `location: { latitude, longitude, accuracy, capturedAt }`.
+Coordinates and accuracy (meters) are finite numbers; `capturedAt` is the device's capture
+time in UTC ISO format. Drafts may have no location. Every entry into the final step requests
+a new high-accuracy device position (`maximumAge: 0`, timeout 15 seconds), including after
+resuming a draft. Permission denial or acquisition failure blocks completion, with a retry
+control; drafts can still be saved. Each return inspection captures its own location.
+An acquired location works offline, and synchronization preserves it without recapturing.
+Once synchronized, the API rejects location changes or removal. Coordinates are stored only
+in the full report, not in list summaries. This does not change shared Firebase rules or indexes.
+
+### Static location map
+
+The final step, report, and print layout show coordinates, approximate accuracy and capture
+time. With `PUBLIC_GOOGLE_MAPS_STATIC_API_KEY`, they also display a Google Maps Static API
+image with a fixed marker. This public, optional build-time key is separate from Firebase keys:
+
+1. Enable Maps Static API and billing in the intended Google Cloud project.
+2. Create a dedicated API key restricted to **Maps Static API** and HTTP referrers for the
+   authorized app domains. Use a separate restricted key for localhost development if needed.
+3. Set `PUBLIC_GOOGLE_MAPS_STATIC_API_KEY` in the build environment and rebuild/redeploy.
+4. Set appropriate API quotas and check a map load on the authorized domain.
+
+See [Google's setup guide](https://developers.google.com/maps/documentation/maps-static/get-api-key).
+Do not commit key values. The app loads map images directly from Google and preserves their
+attribution; the image is not stored in Firebase, IndexedDB, or the app's service-worker cache.
+Coordinates are sent to Google when loading the map. No reverse geocoding or background
+tracking is performed. A missing key, offline connection or image failure falls back to the
+recorded coordinates and never blocks completion after successful geolocation. Printing always
+includes textual location data and includes the map when loaded.
+
+Geolocation requires HTTPS (localhost is supported for development), a compatible browser,
+and device/browser permission. Before this release is used, the operator must delete all old
+checklists from Firestore and every device, then update/reload installed PWAs. No compatibility
+layer or schema migration is provided. This implementation does not perform that deletion.
 
 `GET /api/contacts/search?q=...` searches the CRM's existing `searchTokens` after three normalized
 characters and returns up to ten name matches, with minimal identifying fields. It scans at most

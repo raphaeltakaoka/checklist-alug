@@ -10,7 +10,7 @@ const output = process.env.UI_OUTPUT_DIR || '/private/tmp/checklist-ui-verificat
 await mkdir(output, { recursive: true });
 const browser = await puppeteer.launch({
 	executablePath: process.env.CHROME_PATH || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-	headless: true, args: ['--no-sandbox']
+	headless: true, args: ['--no-sandbox'], protocolTimeout: 30_000
 });
 const page = await browser.newPage();
 const errors = [];
@@ -59,7 +59,8 @@ page.on('request', async request => {
 try {
 	await page.goto(`${base}/dashboard`);
 	await page.waitForSelector('a[href="/dashboard/new"]', { visible: true });
-	await page.screenshot({ path: path.join(output, 'operations-profile-editor.png') });
+	await page.bringToFront();
+	await page.screenshot({ path: path.join(output, 'operations-profile-editor.png'), captureBeyondViewport: false });
 	await page.click('a[href="/dashboard/new"]');
 	await page.waitForSelector('#plate', { visible: true });
 	assert.match(await page.evaluate(() => document.body.innerText), /Nova vistoria/);

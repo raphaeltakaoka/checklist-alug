@@ -13,6 +13,7 @@
   import Icon from "./Icon.svelte";
   import Notice from "./Notice.svelte";
   import Dialog from "./Dialog.svelte";
+  import InspectionLocation from './InspectionLocation.svelte';
   let {
     inspection,
     backHref = "/dashboard/checklists",
@@ -130,6 +131,9 @@
       </dd>
     </div>
   </dl>
+  <section class="report-section">
+    <InspectionLocation location={inspection.location} />
+  </section>
   {#if inspection.inspectionType === "Devolução" && inspection.deliverySnapshot}
     <section class="report-section">
       <div class="section-heading">

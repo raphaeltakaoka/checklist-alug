@@ -2,6 +2,7 @@ import { ApiError } from "$lib/server/errors";
 import { countDamages } from "$lib/inspection.js";
 import { validateContactId } from '$lib/server/contacts';
 import { validateCarId } from '$lib/server/cars';
+import { isValidLocation } from '$lib/inspectionLocation.js';
 
 const PART_IDS = new Set([
   "front_bumper",
@@ -33,6 +34,7 @@ const STATUSES = new Set(["none", "scratch", "dent", "crack", "broken", "damaged
 const FUEL_LEVELS = new Set(["0/8", "1/8", "2/8", "3/8", "4/8", "5/8", "6/8", "7/8", "8/8"]);
 const ALLOWED_FIELDS = new Set([
   "schemaVersion",
+  "location",
   "id",
   "ownerUid",
   "licensePlate",
@@ -200,7 +202,8 @@ export function validateChecklistPayload(payload, ownerUid) {
     fail("Invalid inspection.");
   if (Object.keys(payload).some(key => !ALLOWED_FIELDS.has(key)))
     fail("Unexpected inspection field.");
-  if (payload.schemaVersion !== 3) fail('Unsupported inspection schema version.');
+  if (payload.schemaVersion !== 4) fail('Unsupported inspection schema version.');
+  if (!isValidLocation(payload.location)) fail('Localização inválida. Obtenha a localização atual antes de concluir.');
   if (payload.ownerUid !== ownerUid)
     fail("Invalid inspection owner.");
   const id = string(payload.id, "inspection ID", 128);
@@ -227,6 +230,7 @@ export function validateChecklistPayload(payload, ownerUid) {
 
   const report = {
     schemaVersion: payload.schemaVersion,
+    location: { ...payload.location },
     id,
     ownerUid,
     licensePlate: string(payload.licensePlate, "license plate", 7).toUpperCase(),

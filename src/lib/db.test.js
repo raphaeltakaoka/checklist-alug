@@ -36,8 +36,16 @@ async function readStore(name) {
 }
 
 describe("owner-scoped inspection database", () => {
+  it('preserves a captured location through an offline completion and reload', async () => {
+    const location = { latitude: -23.55052, longitude: -46.633308, accuracy: 12, capturedAt: '2026-11-06T12:00:00.000Z' };
+    const draft = report('owner-a', 'location-draft', { schemaVersion: 4, location: null });
+    await saveInspection(draft);
+    expect((await getInspection('owner-a', draft.id)).location).toBeNull();
+    await saveInspection({ ...draft, location, status: 'completed', syncState: 'queued' });
+    expect(await getInspection('owner-a', draft.id)).toMatchObject({ location, status: 'completed', syncState: 'queued' });
+  });
   it('preserves vehicle, contact identity and an independent signer through an offline draft reload', async () => {
-    const fields = { schemaVersion: 3, carId: 'car-id', licensePlate: 'ABC1D23', contactId: 'doc-id', clientUid: 'historical-uid', clientName: 'Maria', clientSignatureName: 'Representante', signatureNameInitialized: true };
+    const fields = { schemaVersion: 4, carId: 'car-id', licensePlate: 'ABC1D23', contactId: 'doc-id', clientUid: 'historical-uid', clientName: 'Maria', clientSignatureName: 'Representante', signatureNameInitialized: true };
     await saveInspection(report('owner-a', 'contact-draft', fields));
     expect(await getInspection('owner-a', 'contact-draft')).toMatchObject(fields);
     await saveInspection(report('owner-a', 'contact-draft', { ...fields, contactId: null, clientUid: null, clientName: '' }));

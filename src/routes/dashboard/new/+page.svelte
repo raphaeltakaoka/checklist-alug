@@ -40,8 +40,11 @@
   import CarDiagram from "$lib/components/CarDiagram.svelte";
   import DamageModal from "$lib/components/DamageModal.svelte";
   import SignaturePad from "$lib/components/SignaturePad.svelte";
+  import InspectionLocation from '$lib/components/InspectionLocation.svelte';
+  import { createLocationCapture } from '$lib/inspectionLocation.js';
   let report = $state({
-    schemaVersion: 3,
+    schemaVersion: 4,
+    location: null,
     id: "ins-" + crypto.randomUUID(),
     ownerUid: "",
     licensePlate: "",
@@ -100,6 +103,14 @@
   let carLinkVersion = 0;
   let carLinkError = $state('');
   let deliverySearchVersion = 0;
+  let locationCapture;
+  let locationState = $state({ status: 'idle', error: '' });
+
+  function setStep(next) {
+    if (step === 4) locationCapture?.cancel();
+    step = next;
+    if (next === 4) locationCapture?.capture();
+  }
 
   let eligible = $derived(draftStarted || !!(report.licensePlate || report.clientName || report.contactId));
   let photoCount = $derived(
@@ -355,7 +366,7 @@
   async function persist() {
     if (!eligible) {
       errors = inspectionErrors(report, 1);
-      step = 1;
+      setStep(1);
       await focusError();
       return false;
     }
@@ -371,7 +382,7 @@
     if (busy || processing || !hydrated || next === step) return;
     errors = next > step ? inspectionErrors(report, next - 1) : {};
     if (Object.keys(errors).length) {
-      step = firstErrorStep(errors);
+      setStep(firstErrorStep(errors));
       await focusError();
       return;
     }
@@ -379,7 +390,7 @@
     try {
       if (next === 4) suggestSignatureName(report);
       if (await persist()) {
-        step = next;
+        setStep(next);
         await tick();
         document.getElementById("step-title")?.focus();
         window.scrollTo({ top: 0, behavior: "instant" });
@@ -435,8 +446,10 @@
   async function complete() {
     if (busy || processing) return;
     errors = inspectionErrors(report, 4);
+    if (locationState.status !== 'success') errors.location = 'Obtenha a localização atual antes de concluir.';
     if (Object.keys(errors).length) {
-      step = firstErrorStep(errors);
+      const errorStep = firstErrorStep(errors);
+      if (errorStep !== step) setStep(errorStep);
       await focusError();
       return;
     }
@@ -482,6 +495,10 @@
       return;
     }
     alive = true;
+    locationCapture = createLocationCapture(state => {
+      locationState = { status: state.status, error: state.error };
+      report.location = state.location;
+    });
     writer = createInspectionWriter(saveInspection, (state, error) => {
       saveState = state;
       saveError =
@@ -511,7 +528,7 @@
             await goto(`/dashboard/new/${encodeURIComponent(draftId)}`);
             return;
           }
-          if (draft.schemaVersion !== 3) {
+          if (draft.schemaVersion !== 4) {
             loadError = 'Este rascunho usa uma versão não suportada. Inicie uma nova vistoria.';
             return;
           }
@@ -586,6 +603,7 @@
     window.addEventListener("pagehide", flush);
     return () => {
       alive = false;
+      locationCapture?.dispose();
       contactLinkVersion++;
       carLinkVersion++;
       invalidateDeliverySearch();
@@ -1023,6 +1041,10 @@
                 >
               </div>
             </div>
+            <div class="panel panel-pad" tabindex="-1" data-invalid={!!errors.location} aria-describedby="location-error">
+              <InspectionLocation location={report.location} status={locationState.status} error={locationState.error} onretry={() => locationCapture.capture()} />
+              <span id="location-error" class="field-error">{errors.location || ''}</span>
+            </div>
             <div class="field">
               <span class="field-label" id="license-label">Foto da CNH *</span><Notice
                 message={photoError}
@@ -1121,7 +1143,7 @@
                   : "Informe placa ou cliente para salvar"}</span
         ><button
           class="btn primary"
-          disabled={busy || processing}
+          disabled={busy || processing || (step === 4 && locationState.status !== 'success')}
           onclick={() => (step === 4 ? complete() : navigateStep(step + 1))}
           >{busy ? "Salvando…" : step === 4 ? "Concluir vistoria" : "Continuar"}<Icon
             name={step === 4 ? "check" : "arrow"}

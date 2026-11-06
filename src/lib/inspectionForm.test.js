@@ -6,7 +6,8 @@ import {
 } from './inspectionForm.js';
 
 const report = {
-	schemaVersion: 3,
+	schemaVersion: 4,
+	location: { latitude: -23.55052, longitude: -46.633308, accuracy: 12, capturedAt: '2026-11-06T12:00:00.000Z' },
 	licensePlate: 'ABC1D23',
 	carId: 'car-id',
 	clientName: 'Cliente Teste',
@@ -32,6 +33,12 @@ const deferred = () => {
 afterEach(() => vi.useRealTimers());
 
 describe('inspection navigation validation', () => {
+	it('allows location-free drafts but requires a valid location at conclusion', () => {
+		const draft = { ...report, location: null };
+		expect(inspectionErrors(draft, 3)).toEqual({});
+		expect(firstErrorStep(inspectionErrors(draft, 4))).toBe(4);
+		expect(inspectionErrors(draft, 4).location).toBeTruthy();
+	});
 	it('requires a registered vehicle even when a complete plate was typed', () => {
 		const errors = inspectionErrors({ ...report, carId: null }, 1);
 		expect(errors.licensePlate).toContain('Selecione um veículo');

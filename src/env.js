@@ -9,6 +9,7 @@ export const variables = defineEnvVars({
 	PUBLIC_FIREBASE_MESSAGING_SENDER_ID: { public: true, static: true },
 	PUBLIC_FIREBASE_APP_ID: { public: true, static: true },
 	PUBLIC_FIREBASE_VAPID_KEY: { public: true, static: true },
+	PUBLIC_GOOGLE_MAPS_STATIC_API_KEY: { public: true, static: true, schema: value => value ?? '' },
 	// Admin credentials are private and read from the server environment at runtime.
 	FIREBASE_SERVICE_ACCOUNT: {},
 	FIREBASE_STORAGE_BUCKET: {}

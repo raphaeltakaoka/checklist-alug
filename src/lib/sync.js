@@ -2,6 +2,7 @@ import { storage } from "$lib/firebaseStorage.js";
 import { deleteInspection, getInspection, saveInspection } from '$lib/db.js';
 import { getDownloadURL, ref, uploadBytesResumable } from "firebase/storage";
 import { authenticatedFetch } from "$lib/api.js";
+import { isValidLocation } from '$lib/inspectionLocation.js';
 
 const UPLOAD_CONCURRENCY = 2;
 
@@ -127,6 +128,7 @@ async function uploadInspectionMedia(report) {
 function buildCloudReport(localReport) {
   return {
     schemaVersion: localReport.schemaVersion,
+    location: localReport.location,
     id: localReport.id,
     ownerUid: localReport.ownerUid,
     licensePlate: String(localReport.licensePlate || "").toUpperCase(),
@@ -163,7 +165,8 @@ export async function syncInspectionToCloud(inspection) {
   if (!ownerUid || !inspection?.id) throw new Error("Inspection ownership is required for sync.");
   const hydrated = await getInspection(ownerUid, inspection.id);
   if (!hydrated) throw new Error("The local inspection could not be found.");
-  if (hydrated.schemaVersion !== 3) throw new Error('Unsupported inspection schema version.');
+  if (hydrated.schemaVersion !== 4) throw new Error('Unsupported inspection schema version.');
+  if (!isValidLocation(hydrated.location)) throw new Error('Localização inválida. Não foi possível enviar a vistoria.');
 
   await saveInspection({
     ...hydrated,
