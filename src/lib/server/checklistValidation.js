@@ -1,35 +1,9 @@
 import { ApiError } from "$lib/server/errors";
-import { countDamages } from "$lib/inspection.js";
+import { countDamages, isValidPartKey, isItemCategory, partCategory } from '$lib/inspection.js';
 import { validateContactId } from '$lib/server/contacts';
 import { validateCarId } from '$lib/server/cars';
 import { isValidLocation } from '$lib/inspectionLocation.js';
 
-const PART_IDS = new Set([
-  "front_bumper",
-  "hood",
-  "windshield",
-  "roof",
-  "rear_glass",
-  "trunk",
-  "rear_bumper",
-  "left_fender",
-  "left_front_door",
-  "left_front_window",
-  "left_rear_door",
-  "left_rear_window",
-  "left_rear_quarter",
-  "right_fender",
-  "right_front_door",
-  "right_front_window",
-  "right_rear_door",
-  "right_rear_window",
-  "right_rear_quarter",
-  "interior",
-  "left_front_wheel",
-  "right_front_wheel",
-  "left_rear_wheel",
-  "right_rear_wheel",
-]);
 const STATUSES = new Set(["none", "scratch", "dent", "crack", "broken", "damaged"]);
 const FUEL_LEVELS = new Set(["0/8", "1/8", "2/8", "3/8", "4/8", "5/8", "6/8", "7/8", "8/8"]);
 const ALLOWED_FIELDS = new Set([
@@ -96,6 +70,7 @@ function storagePath(value, name, prefix, required = true) {
 }
 
 const ALLOWED_PART_FIELDS = new Set([
+  "name",
   "status",
   "comments",
   "photos",
@@ -111,13 +86,17 @@ function cleanPartStates(value, prefix) {
   const result = {};
   let totalPhotos = 0;
   for (const [partId, state] of Object.entries(value)) {
-    if (!PART_IDS.has(partId) || !state || typeof state !== "object" || Array.isArray(state)) {
+    if (!isValidPartKey(partId) || !state || typeof state !== "object" || Array.isArray(state)) {
       fail("Invalid inspection part.");
     }
     if (Object.keys(state).some(key => !ALLOWED_PART_FIELDS.has(key))) {
       fail("Unexpected inspection part field.");
     }
     if (!STATUSES.has(state.status)) fail("Invalid damage status.");
+    const name = isItemCategory(partCategory(partId))
+      ? string(state.name, 'item name', 100).trim() : null;
+    if (name === '') fail('Informe o nome do item.');
+    if (name === null && Object.hasOwn(state, 'name')) fail('Unexpected item name.');
     const comments = string(state.comments ?? "", "damage comments", 1000, { required: false });
     if (!Array.isArray(state.photos) || !Array.isArray(state.photoPaths))
       fail("Invalid damage photos.");
@@ -143,6 +122,7 @@ function cleanPartStates(value, prefix) {
       : [];
 
     result[partId] = {
+      ...(name !== null ? { name } : {}),
       status: state.status,
       comments,
       photos: state.photos.map((url, index) => httpsUrl(url, `photo ${index}`)),
@@ -162,8 +142,11 @@ function sanitizePartStatesForSnapshot(partStates) {
   if (!partStates || typeof partStates !== "object" || Array.isArray(partStates)) return {};
   const clean = {};
   for (const [partId, state] of Object.entries(partStates)) {
-    if (!PART_IDS.has(partId) || !state || typeof state !== "object") continue;
+    if (!isValidPartKey(partId) || !state || typeof state !== "object") continue;
+    const named = isItemCategory(partCategory(partId));
+    if (named && (typeof state.name !== 'string' || !state.name.trim() || state.name.length > 100)) fail('Invalid delivery item name.');
     clean[partId] = {
+      ...(named ? { name: state.name.trim() } : {}),
       status: STATUSES.has(state.status) ? state.status : "none",
       comments: String(state.comments || "").slice(0, 1000),
       photos: Array.isArray(state.photos)

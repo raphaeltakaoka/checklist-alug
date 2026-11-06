@@ -2,7 +2,7 @@
   import { onDestroy } from "svelte";
   import { compressImage } from "$lib/utils/imageCompressor.js";
   import { mediaPreviewUrl, revokeMediaPreview } from "$lib/mediaPreview.js";
-  import { STATUS_LABELS } from "$lib/inspection.js";
+  import { STATUS_LABELS, isItemCategory, partCategory } from '$lib/inspection.js';
   import Icon from "./Icon.svelte";
   import Notice from "./Notice.svelte";
   import Dialog from "./Dialog.svelte";
@@ -12,6 +12,9 @@
     comments: "",
     photos: [],
   };
+  const namedItem = isItemCategory(partCategory(partId));
+  let name = $state(initial.name || '');
+  let nameError = $state('');
   let deliveryStatus = initial.deliveryStatus || "";
   let deliveryComments = initial.deliveryComments || "";
   let deliveryPhotos = Array.isArray(initial.deliveryPhotos) ? [...initial.deliveryPhotos] : [];
@@ -42,7 +45,7 @@
     Math.max(0, Math.min(6 - photos.length, 24 - otherCount - photos.length)),
   );
   let invalidNone = $derived(
-    status === "none" && !hasDeliveryDamage && (!!comments.trim() || photos.length > 0),
+    !namedItem && status === "none" && !hasDeliveryDamage && (!!comments.trim() || photos.length > 0),
   );
   function close() {
     if (processing) return;
@@ -51,10 +54,15 @@
   }
   function save() {
     if (processing || invalidNone) return;
+    if (namedItem && !name.trim()) {
+      nameError = 'Informe o nome do item.';
+      return;
+    }
     const finalStatus = hasDeliveryDamage && !isNewDamage ? deliveryStatus : status;
     partStates = {
       ...partStates,
       [partId]: {
+        ...(namedItem ? { name: name.trim() } : {}),
         status: finalStatus,
         comments,
         photos: [...photos],
@@ -103,6 +111,16 @@
 <Dialog title={partName} onclose={close} busy={processing}>
   <div class="stack">
     <Notice message={error} />
+    {#if namedItem}
+      <div class="field">
+        <label for="damage-item-name">Nome do item *</label>
+        <input id="damage-item-name" bind:value={name} maxlength="100" disabled={processing}
+          aria-invalid={!!nameError} aria-describedby={nameError ? 'damage-name-error' : undefined}
+          placeholder={partCategory(partId) === 'headlights' ? 'Ex: Farol dianteiro esquerdo' : 'Ex: Banco do motorista ou Parabrisa'}
+          oninput={() => { dirty = true; nameError = ''; }} />
+        {#if nameError}<p id="damage-name-error" class="field-error">{nameError}</p>{/if}
+      </div>
+    {/if}
     {#if hasDeliveryDamage}
       <div class="panel panel-pad" style="background: #fffbeb; border-color: #fde68a;">
         <div class="section-heading" style="margin-bottom: 8px;">
@@ -247,7 +265,7 @@
   </div>
   {#snippet footer()}<button class="btn" disabled={processing} onclick={close}>Cancelar</button
     ><button class="btn primary" disabled={processing || invalidNone} onclick={save}
-      ><Icon name="check" size={17} />Salvar peça</button
+      ><Icon name="check" size={17} />{namedItem ? 'Salvar item' : 'Salvar peça'}</button
     >{/snippet}
 </Dialog>
 {#if discard}<Dialog title="Descartar alterações da peça?" onclose={() => (discard = false)}

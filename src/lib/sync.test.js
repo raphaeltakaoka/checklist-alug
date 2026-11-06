@@ -25,6 +25,18 @@ beforeEach(() => {
 });
 
 describe('inspection synchronization', () => {
+	it('synchronizes independent named items and their stable photo paths', async () => {
+		const partStates = {
+			glass_front: { name: 'Parabrisa', status: 'crack', photos: ['https://example.test/front.jpg'], photoPaths: ['checklists/owner-a/ins-items/parts/glass_front/0.jpg'] },
+			glass_left: { name: 'Vidro esquerdo', status: 'scratch', photos: [], photoPaths: [] },
+			interior_seat: { name: 'Banco', status: 'none', photos: [], photoPaths: [] }
+		};
+		const report = { id: 'ins-items', ownerUid: 'owner-a', schemaVersion: 4, partStates, location };
+		getInspection.mockResolvedValue(report);
+		authenticatedFetch.mockResolvedValue({ json: async () => ({ report }) });
+		await syncInspectionToCloud(report);
+		expect(JSON.parse(authenticatedFetch.mock.calls[0][1].body).partStates).toMatchObject(partStates);
+	});
 	it('rejects missing location before uploading, saving or deleting queued data', async () => {
 		const report = { id: 'missing-location', ownerUid: 'owner-a', schemaVersion: 4 };
 		getInspection.mockResolvedValue(report);

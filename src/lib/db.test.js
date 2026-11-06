@@ -36,6 +36,22 @@ async function readStore(name) {
 }
 
 describe("owner-scoped inspection database", () => {
+  it('keeps item photos separate across rename, deletion and offline reload', async () => {
+    await saveInspection(report('owner-a', 'items', { partStates: {
+      glass_front: { name: 'Parabrisa', status: 'crack', photos: [new Blob(['front'], { type: 'image/jpeg' })] },
+      glass_left: { name: 'Lateral', status: 'scratch', photos: [new Blob(['left'], { type: 'image/jpeg' })] },
+      interior_seat: { name: 'Banco', status: 'none', photos: [] },
+    } }));
+    const restored = await getInspection('owner-a', 'items');
+    expect(restored.partStates.glass_front.photos[0]).not.toEqual(restored.partStates.glass_left.photos[0]);
+    restored.partStates.glass_left.name = 'Vidro lateral esquerdo';
+    delete restored.partStates.glass_front;
+    await saveInspection(restored);
+    const reloaded = await getInspection('owner-a', 'items');
+    expect(Object.keys(reloaded.partStates)).toEqual(['glass_left', 'interior_seat']);
+    expect(reloaded.partStates.glass_left).toEqual(restored.partStates.glass_left);
+    expect((await readStore('inspectionMedia')).map(record => record.key)).toEqual(['parts/glass_left/0']);
+  });
   it('preserves a captured location through an offline completion and reload', async () => {
     const location = { latitude: -23.55052, longitude: -46.633308, accuracy: 12, capturedAt: '2026-11-06T12:00:00.000Z' };
     const draft = report('owner-a', 'location-draft', { schemaVersion: 4, location: null });

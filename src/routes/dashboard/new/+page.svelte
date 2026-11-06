@@ -19,6 +19,9 @@
   import { mediaPreviewUrl, revokeMediaPreview } from "$lib/mediaPreview.js";
   import {
     PART_NAMES,
+    isItemCategory,
+    partCategory,
+    partEntries,
     STATUS_LABELS,
     calculateFuelDiff,
     calculateMileageDiff,
@@ -38,6 +41,7 @@
   import Notice from "$lib/components/Notice.svelte";
   import Dialog from "$lib/components/Dialog.svelte";
   import CarDiagram from "$lib/components/CarDiagram.svelte";
+  import DamageItemsModal from '$lib/components/DamageItemsModal.svelte';
   import DamageModal from "$lib/components/DamageModal.svelte";
   import SignaturePad from "$lib/components/SignaturePad.svelte";
   import InspectionLocation from '$lib/components/InspectionLocation.svelte';
@@ -250,8 +254,9 @@
     // Copy delivery part damages as pre-existing
     const preExistingParts = {};
     for (const [partId, state] of Object.entries(delivery.partStates || {})) {
-      if (state?.status && state.status !== "none") {
+      if (state?.status && (state.status !== "none" || isItemCategory(partCategory(partId)))) {
         preExistingParts[partId] = {
+          ...(state.name ? { name: state.name } : {}),
           status: state.status,
           comments: state.comments || "",
           photos: [],
@@ -920,6 +925,9 @@
                     onclick={() => (activePart = partId)}
                     ><span>{name}</span>
                     <div class="inline" style="gap:6px">
+                      {#if isItemCategory(partId)}
+                        <span class="badge">{partEntries(report.partStates, partId).length} itens · {countDamages(Object.fromEntries(partEntries(report.partStates, partId)))} danos</span>
+                      {:else}
                       {#if report.partStates[partId]?.isNewDamage}
                         <span class="badge danger">Novo</span>
                       {:else if report.partStates[partId]?.deliveryStatus}
@@ -928,6 +936,7 @@
                       <span class="badge"
                         >{STATUS_LABELS[report.partStates[partId]?.status] || "Sem danos"}</span
                       >
+                      {/if}
                     </div>
                     <Icon name="chevron" size={16} /></button
                   >{/each}
@@ -1042,7 +1051,7 @@
               </div>
             </div>
             <div class="panel panel-pad" tabindex="-1" data-invalid={!!errors.location} aria-describedby="location-error">
-              <InspectionLocation location={report.location} status={locationState.status} error={locationState.error} onretry={() => locationCapture.capture()} />
+              <InspectionLocation compact location={report.location} status={locationState.status} error={locationState.error} onretry={() => locationCapture.capture()} />
               <span id="location-error" class="field-error">{errors.location || ''}</span>
             </div>
             <div class="field">
@@ -1154,7 +1163,9 @@
     </div>
   {/if}
 </main>
-{#if activePart}<DamageModal
+{#if isItemCategory(activePart)}
+  <DamageItemsModal bind:category={activePart} bind:partStates={report.partStates} />
+{:else if activePart}<DamageModal
     bind:partId={activePart}
     bind:partStates={report.partStates}
     partName={PART_NAMES[activePart]}

@@ -45,8 +45,20 @@ const fixtureReport = {
 	synced: true,
 	syncState: 'synced',
 	status: 'completed',
-	damageCount: 1,
+	damageCount: 3,
 	partStates: {
+		headlights_left: {
+			name: 'Farol esquerdo', status: 'crack', comments: 'Trinca na lente.',
+			photos: ['https://ui-fixtures.invalid/headlight.png'],
+			photoPaths: [`checklists/${ownerUid}/ui-synced/parts/headlights_left/0.png`]
+		},
+		glass_front: {
+			name: 'Parabrisa',
+			status: 'crack',
+			comments: 'Trinca no parabrisa.',
+			photos: ['https://ui-fixtures.invalid/glass.png'],
+			photoPaths: [`checklists/${ownerUid}/ui-synced/parts/glass_front/0.png`]
+		},
 		hood: {
 			status: 'scratch',
 			comments: 'Risco superficial no capô.',
@@ -266,17 +278,13 @@ page.on('request', async (request) => {
 				return json(request, { error: 'Falha de envio simulada.' }, 503);
 			return json(request, { report: JSON.parse(request.postData()) });
 		}
-		if (url.pathname.endsWith('/photos'))
-			return json(request, {
-				partStates: {
-					hood: {
-						status: 'scratch',
-						comments: 'Risco superficial no capô.',
-						photos: [],
-						photoPaths: []
-					}
-				}
-			});
+		if (url.pathname.endsWith('/photos')) {
+			const { partKey } = JSON.parse(request.postData());
+			return json(request, { partStates: {
+				...fixtureReport.partStates,
+				[partKey]: { ...fixtureReport.partStates[partKey], photos: [], photoPaths: [] }
+			} });
+		}
 		return json(request, { success: true });
 	}
 	return request.continue();
@@ -365,7 +373,7 @@ async function noOverflow() {
 		'Page must fit viewport'
 	);
 }
-async function captureAt(width, name) {
+async function captureAt(width, name, fullPage = false) {
 	await page.setViewport({
 		...page.viewport(),
 		width,
@@ -373,7 +381,7 @@ async function captureAt(width, name) {
 		deviceScaleFactor: 1
 	});
 	await noOverflow();
-	await screenshot(name);
+	await screenshot(name, fullPage);
 }
 try {
 	await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 1, isMobile: true, hasTouch: true });
@@ -551,8 +559,168 @@ try {
 	await screenshot('form-interior-mobile');
 	await click('Continuar');
 	await waitText('Selecione uma peça');
-	await screenshot('form-damage-mobile');
-	await page.click('button[aria-pressed="false"]'); // Switch to parts list.
+	assert.equal(await page.$('.damage-indicator'), null, 'Categories without damage have no indicator');
+	const removedGlassNames = ['Parabrisa', 'Vidro Traseiro', 'Vidro Diant. Esq.', 'Vidro Tras. Esq.', 'Vidro Diant. Dir.', 'Vidro Tras. Dir.'];
+	const diagramLabels = await page.$$eval('svg [role=button]', els => els.map(el => el.getAttribute('aria-label')));
+	assert(removedGlassNames.every(name => !diagramLabels.includes(name)), 'The map has no individual glass targets');
+	assert.equal(diagramLabels.length, 17, 'All other exterior parts remain available');
+	assert.deepEqual(await page.$eval('svg [aria-label="Teto"]', el => [el.getAttribute('x'), el.getAttribute('y'), el.getAttribute('width'), el.getAttribute('height')]), ['50', '114', '100', '134']);
+	for (const [width, name] of [[390, 'form-damage-mobile'], [1440, 'form-damage-desktop']]) {
+		await captureAt(width, name, true);
+		assert(await page.evaluate(() => {
+			const cabin = [...document.querySelectorAll('button')].find(el => el.textContent.trim() === 'Interior da cabine');
+			const glass = cabin.nextElementSibling;
+			const a = cabin.getBoundingClientRect();
+			const b = glass.getBoundingClientRect();
+			const headlights = glass.nextElementSibling;
+			const c = headlights.getBoundingClientRect();
+			return headlights.textContent.trim() === 'Faróis' && c.top >= b.bottom && Math.abs(b.left - c.left) < 1 && glass.textContent.trim() === 'Vidros' && b.top >= a.bottom && Math.abs(a.left - b.left) < 1;
+		}), 'Glass stays directly below cabin at both viewport sizes');
+	}
+	await page.setViewport({ ...page.viewport(), width: 390, height: 844 });
+	await page.$eval('svg [aria-label="Teto"]', el => el.focus());
+	await page.keyboard.press('Enter');
+	await page.waitForSelector('dialog[open]');
+	assert((await page.$eval('dialog', el => el.textContent)).includes('Teto'));
+	await click('Cancelar');
+	await page.waitForFunction(() => !document.querySelector('dialog'));
+	await page.evaluate(() => [...document.querySelectorAll('button')].find(el => el.textContent.trim() === 'Interior da cabine').focus());
+	await page.keyboard.press('Tab');
+	assert.equal(await page.evaluate(() => document.activeElement.textContent.trim()), 'Vidros');
+	await page.keyboard.press('Tab');
+	assert.equal(await page.evaluate(() => document.activeElement.textContent.trim()), 'Faróis');
+	await page.keyboard.down('Shift');
+	await page.keyboard.press('Tab');
+	await page.keyboard.up('Shift');
+	await page.keyboard.press('Enter');
+	await waitText('Nenhum item cadastrado.');
+	await click('Adicionar item');
+	await page.waitForSelector('#damage-item-name');
+	await click('Salvar item');
+	await waitText('Informe o nome do item.');
+	await page.type('#damage-item-name', 'Parabrisa');
+	await waitText('Condição da peça');
+	for (const label of ['Sem Danos', 'Risco', 'Amassado', 'Trincado', 'Quebrado', 'Danificado']) {
+		assert((await page.$$eval('dialog', els => els.at(-1).textContent)).includes(label));
+	}
+	await click('Trincado');
+	await page.type('#damage-comments', 'Trinca no parabrisa e risco no vidro lateral.');
+	const glassFiles = await page.$$('dialog input[type=file]');
+	await glassFiles[1].uploadFile(imageFile);
+	await waitText('1/6');
+	await screenshot('glass-editor-mobile');
+	await click('Salvar item');
+	await page.waitForFunction(() => !document.querySelector('#damage-item-name'));
+	await click('Adicionar item');
+	await page.type('#damage-item-name', 'Vidro lateral');
+	await click('Risco');
+	const secondGlassFiles = await page.$$('dialog input[type=file]');
+	await secondGlassFiles[1].uploadFile(imageFile);
+	await waitText('1/6');
+	await click('Salvar item');
+	await page.waitForFunction(() => !document.querySelector('#damage-item-name'));
+	await click('Adicionar item');
+	await page.type('#damage-item-name', 'Vidro traseiro');
+	await click('Salvar item');
+	await page.waitForFunction(() => !document.querySelector('#damage-item-name'));
+	await click('Adicionar item');
+	await page.type('#damage-item-name', 'Temporário');
+	await click('Salvar item');
+	await page.waitForFunction(() => !document.querySelector('#damage-item-name'));
+	await page.click('button[aria-label="Excluir Temporário"]');
+	await click('Cancelar');
+	await page.click('button[aria-label="Excluir Temporário"]');
+	await click('Excluir item');
+	await page.waitForFunction(() => !document.querySelector('button[aria-label="Excluir Temporário"]'));
+	await page.click('button[aria-label="Editar Parabrisa"]');
+	await page.$eval('#damage-item-name', el => { el.value = 'Parabrisa dianteiro'; el.dispatchEvent(new Event('input', { bubbles: true })); });
+	await click('Salvar item');
+	await page.waitForFunction(() => !document.querySelector('#damage-item-name'));
+	await screenshot('glass-items-mobile');
+	await captureAt(1440, 'glass-items-desktop');
+	await page.setViewport({ ...page.viewport(), width: 390, height: 844 });
+	await click('Fechar');
+	await page.waitForFunction(() => !document.querySelector('dialog'));
+	await click('Interior da cabine', false);
+	for (const [name, status] of [['Banco do motorista', 'Danificado'], ['Painel', 'Risco'], ['Banco traseiro', 'Sem Danos']]) {
+		await click('Adicionar item');
+		await page.type('#damage-item-name', name);
+		await click(status);
+		await click('Salvar item');
+		await page.waitForFunction(() => !document.querySelector('#damage-item-name'));
+	}
+	await screenshot('cabin-items-mobile');
+	await click('Fechar');
+	await page.waitForFunction(() => !document.querySelector('dialog'));
+	await click('Faróis', false);
+	await click('Adicionar item');
+	await page.waitForSelector('#damage-item-name');
+	assert.equal(await page.$eval('#damage-item-name', el => el.placeholder), 'Ex: Farol dianteiro esquerdo');
+	await page.type('#damage-item-name', 'Farol esquerdo');
+	await click('Trincado');
+	await page.type('#damage-comments', 'Trinca na lente.');
+	const headlightFiles = await page.$$('dialog input[type=file]');
+	await headlightFiles[1].uploadFile(imageFile);
+	await waitText('1/6');
+	await click('Salvar item');
+	await page.waitForFunction(() => !document.querySelector('#damage-item-name'));
+	await click('Adicionar item');
+	await page.type('#damage-item-name', 'Farol direito');
+	await click('Salvar item');
+	await page.waitForFunction(() => !document.querySelector('#damage-item-name'));
+	await page.click('button[aria-label="Editar Farol esquerdo"]');
+	await page.$eval('#damage-item-name', el => { el.value = 'Farol dianteiro esquerdo'; el.dispatchEvent(new Event('input', { bubbles: true })); });
+	await click('Salvar item');
+	await page.waitForFunction(() => !document.querySelector('#damage-item-name'));
+	await screenshot('headlight-items-mobile');
+	await captureAt(1440, 'headlight-items-desktop');
+	await page.setViewport({ ...page.viewport(), width: 390, height: 844 });
+	await click('Fechar');
+	await page.waitForFunction(() => !document.querySelector('dialog'));
+	assert.deepEqual(await page.$$eval('.damage-category', els => els.map(el => [el.dataset.category, el.querySelector('.damage-indicator')?.textContent || null])), [['interior', '2'], ['glass', '2'], ['headlights', '1']], 'Indicators count damaged items and exclude healthy items');
+	assert.equal(await page.$eval('[data-category="headlights"]', el => el.getAttribute('aria-label')), 'Faróis, 1 item com dano');
+	assert.equal(await page.$eval('[data-category="glass"] .damage-indicator', el => getComputedStyle(el).backgroundColor), 'rgb(185, 28, 28)');
+	await page.$eval('[data-category="interior"]', el => el.scrollIntoView({ block: 'center' }));
+	await screenshot('damage-indicators-mobile');
+	await captureAt(1440, 'damage-indicators-desktop');
+	await page.setViewport({ ...page.viewport(), width: 390, height: 844 });
+	await click('Faróis', false);
+	await page.click('button[aria-label="Editar Farol dianteiro esquerdo"]');
+	await click('Sem Danos');
+	await click('Salvar item');
+	await page.waitForFunction(() => !document.querySelector('#damage-item-name'));
+	await click('Fechar');
+	await page.waitForFunction(() => !document.querySelector('dialog'));
+	assert.equal(await page.$('[data-category="headlights"] .damage-indicator'), null, 'The indicator disappears when the last damaged item becomes healthy');
+	await click('Faróis', false);
+	await page.click('button[aria-label="Editar Farol dianteiro esquerdo"]');
+	await click('Trincado');
+	await click('Salvar item');
+	await page.waitForFunction(() => !document.querySelector('#damage-item-name'));
+	await click('Adicionar item');
+	await page.type('#damage-item-name', 'Farol temporário');
+	await click('Quebrado');
+	await click('Salvar item');
+	await page.waitForFunction(() => !document.querySelector('#damage-item-name'));
+	await click('Fechar');
+	await page.waitForFunction(() => !document.querySelector('dialog'));
+	assert.equal(await page.$eval('[data-category="headlights"] .damage-indicator', el => el.textContent), '2');
+	await click('Faróis', false);
+	await page.click('button[aria-label="Excluir Farol temporário"]');
+	await click('Excluir item');
+	await page.waitForFunction(() => !document.querySelector('button[aria-label="Excluir Farol temporário"]'));
+	await click('Fechar');
+	await page.waitForFunction(() => !document.querySelector('dialog'));
+	assert.equal(await page.$eval('[data-category="headlights"] .damage-indicator', el => el.textContent), '1', 'Deletion updates the indicator immediately');
+	await click('Lista de peças');
+	const partRows = await page.$$eval('.check-row', els => els.map(el => el.textContent));
+	const cabinRow = partRows.findIndex(name => name.includes('Interior da Cabine'));
+	assert(partRows[cabinRow + 1].includes('Vidros'), 'Glass follows cabin in the parts list');
+	assert(removedGlassNames.every(name => !partRows.some(row => row.includes(name))));
+	assert(partRows[cabinRow + 2].includes('Faróis') && partRows[cabinRow + 2].includes('2 itens') && partRows[cabinRow + 2].includes('1 danos'));
+	assert(partRows[cabinRow + 1].includes('3 itens') && partRows[cabinRow + 1].includes('2 danos'));
+	assert(partRows[cabinRow].includes('3 itens') && partRows[cabinRow].includes('2 danos'));
+	await screenshot('glass-list-mobile');
 	await click('Capô', false);
 	await waitText('Condição da peça');
 	await click('Risco');
@@ -588,19 +756,23 @@ try {
 		window.__geoHold = false;
 		window.__geoCallbacks.shift()();
 	});
-	await waitText('Permissão de localização negada');
+	await waitText('Localização não capturada.');
+	assert.equal(await page.$('.inspection-location time'), null, 'Failed capture does not display a stale timestamp');
+	await screenshot('location-summary-error-mobile');
 	assert.equal(await page.$eval('.inspection-actions .primary', el => el.disabled), true);
-	assert(!(await text()).includes('Localização capturada automaticamente'), 'The canceled GPS result must be ignored');
+	assert(!(await text()).includes('Localização capturada.'), 'The canceled GPS result must be ignored');
 	await page.evaluate(() => { window.__geoError = 0; });
 	await click('Tentar novamente');
-	await waitText('Localização capturada automaticamente');
-	await page.waitForFunction(() => document.querySelector('img.location-map')?.naturalWidth > 0);
-	const map = new URL(await page.$eval('img.location-map', el => el.src));
-	assert.equal(map.searchParams.get('zoom'), '16');
-	assert.equal(map.searchParams.get('size'), '640x320');
-	assert.equal(map.searchParams.get('scale'), '2');
-	assert.equal(map.searchParams.get('markers'), '-23.55052,-46.633308');
-	await screenshot('location-map-mobile');
+	await waitText('Localização capturada.');
+	assert.equal(await page.$('.inspection-location img'), null, 'Conclusion has no map');
+	assert.equal(await page.$('.inspection-location a'), null, 'Conclusion has no map link');
+	assert.equal(await page.$('.inspection-location dl'), null, 'Conclusion has no coordinate or accuracy details');
+	assert.equal(await page.$eval('.inspection-location time', el => Number.isFinite(Date.parse(el.dateTime))), true);
+	assert(await page.$eval('.inspection-location time', el => /Capturada em \d{2}\/\d{2}\/\d{4}, \d{2}:\d{2}/.test(el.textContent)));
+	await page.$eval('.inspection-location', el => el.scrollIntoView({ block: 'center' }));
+	await screenshot('location-summary-mobile');
+	await captureAt(1440, 'location-summary-desktop');
+	await page.setViewport({ ...page.viewport(), width: 390, height: 844 });
 	await waitText('Foto da CNH');
 	assert.equal(await page.$eval('#signature-name', el => el.value), 'Cliente de Teste');
 	await page.$eval('#signature-name', el => {
@@ -622,8 +794,9 @@ try {
 	failMaps = true;
 	await page.evaluate(() => { window.__geoLatitude = -22.9; });
 	await click('Conclusão', false);
-	await waitText('Mapa indisponível');
-	assert((await text()).includes('-22.900000'), 'Reentering conclusion captures the current position');
+	await waitText('Localização capturada.');
+	assert.equal(await page.$('.inspection-location img'), null);
+	assert(!(await page.$eval('.inspection-location', el => el.textContent)).includes('-22.900000'));
 	assert.equal(await page.$eval('.inspection-actions .primary', el => el.disabled), false, 'Map failure does not block completion');
 	await page.waitForSelector('#signature-name');
 	assert.equal(await page.$eval('#signature-name', el => el.value), 'Representante de Teste', 'Changing contact must preserve signer edits');
@@ -648,15 +821,35 @@ try {
 	await waitText('Olá, Rafael.');
 	const locationDraft = await page.evaluate(async () => (await (await import('/src/lib/db.js')).getAllInspections('ui-test-inspector')).find(r => r.licensePlate === 'XYZ9A87'));
 	assert.equal(locationDraft.location.latitude, -22.9, 'Draft saves the acquired position');
+	const glassKey = Object.keys(locationDraft.partStates).find(key => locationDraft.partStates[key].name === 'Parabrisa dianteiro');
+	assert(glassKey.startsWith('glass_'));
+	const headlightKey = Object.keys(locationDraft.partStates).find(key => locationDraft.partStates[key].name === 'Farol dianteiro esquerdo');
+	assert(headlightKey.startsWith('headlights_'));
+	assert.equal(locationDraft.partStates[headlightKey].photos.length, 1);
+	assert.equal(locationDraft.partStates[glassKey].status, 'crack');
+	assert.equal(Object.values(locationDraft.partStates).filter(item => item.status !== 'none').length, 6);
+	assert.equal(Object.values(locationDraft.partStates).filter(item => item.status === 'none').length, 3);
+	assert.equal(locationDraft.partStates[glassKey].photos.length, 1);
+	assert.equal(locationDraft.partStates[glassKey].comments, 'Trinca no parabrisa e risco no vidro lateral.');
 	await page.goto(base + `/dashboard/new?id=${locationDraft.id}`);
 	await waitText('Contato vinculado');
+	await click('Danos', false);
+	await click('Vidros', false);
+	await page.click('button[aria-label="Editar Parabrisa dianteiro"]');
+	await waitText('Condição da peça');
+	assert.equal(await page.$eval('#damage-comments', el => el.value), 'Trinca no parabrisa e risco no vidro lateral.');
+	await waitText('1/6');
+	await click('Cancelar');
+	await page.waitForFunction(() => !document.querySelector('#damage-item-name'));
+	await click('Fechar');
+	await page.waitForFunction(() => !document.querySelector('dialog'));
 	await page.evaluate(() => { window.__geoHold = true; window.__geoLatitude = -22.8; });
 	await click('Conclusão', false);
 	await waitText('Obtendo localização atual');
 	assert.equal(await page.$eval('.inspection-actions .primary', el => el.disabled), true, 'A restored location cannot bypass recapture');
 	await page.evaluate(() => { window.__geoCallbacks.shift()(); });
-	await waitText('Localização capturada automaticamente');
-	assert((await text()).includes('-22.800000'));
+	await waitText('Localização capturada.');
+	assert.equal(await page.$eval('.inspection-location time', el => Number.isFinite(Date.parse(el.dateTime))), true);
 	await captureAt(390, 'form-conclusion-mobile');
 	await page.evaluate(() => {
 		window.__offline = true;
@@ -672,6 +865,14 @@ try {
 			).getAllInspections('ui-test-inspector')
 		).find((r) => r.licensePlate === 'XYZ9A87')
 	);
+	assert.equal(completed.partStates[glassKey].status, 'crack');
+	assert.equal(completed.partStates[glassKey].photos.length, 1);
+	const savedDiagram = await page.evaluate(async id => {
+		const report = await (await import('/src/lib/db.js')).getInspection('ui-test-inspector', id);
+		return (await fetch(report.carDiagramImage)).text();
+	}, completed.id);
+	assert(!removedGlassNames.some(name => savedDiagram.includes(name)), 'The captured SVG has no individual glass shapes');
+	assert(savedDiagram.includes('height="134"'), 'The captured image uses the enlarged roof');
 	assert.equal(completed.status, 'completed');
 	assert.equal(completed.syncState, 'queued');
 	assert.equal(completed.schemaVersion, 4);
@@ -685,6 +886,13 @@ try {
 	await page.evaluate(() => { sessionStorage.setItem('ui-offline', 'true'); });
 	await page.goto(base + `/dashboard/new/${completed.id}`);
 	await waitText('Laudo de vistoria');
+	await waitText('Trinca no parabrisa e risco no vidro lateral.');
+	assert.equal(await page.$$eval('h3', els => els.filter(el => el.textContent.trim() === 'Vidros — Parabrisa dianteiro').length), 1);
+	await page.waitForSelector('button[aria-label="Ampliar foto 1 de Vidros — Parabrisa dianteiro"]');
+	await waitText('Interior da Cabine — Banco traseiro');
+	await waitText('Vidros — Vidro traseiro');
+	await waitText('Faróis — Farol dianteiro esquerdo');
+	await waitText('Faróis — Farol direito');
 	await waitText('Mapa indisponível');
 	assert((await text()).includes('-22.800000'));
 	assert.equal(await page.evaluate(() => window.__geoRequests.length), 0, 'Opening a completed report must not recapture location');
@@ -697,6 +905,11 @@ try {
 	await page.reload();
 	await waitText('Laudo de vistoria');
 	await page.waitForFunction(() => document.querySelector('img.location-map')?.naturalWidth > 0);
+	const map = new URL(await page.$eval('img.location-map', el => el.src));
+	assert.equal(map.searchParams.get('zoom'), '16');
+	assert.equal(map.searchParams.get('size'), '640x320');
+	assert.equal(map.searchParams.get('scale'), '2');
+	assert.equal(map.searchParams.get('markers'), '-22.8,-46.633308');
 	assert((await text()).includes('Representante de Teste'));
 	assert.equal(await page.$eval('img.report-signature', el => el.alt), 'Assinatura de Representante de Teste');
 	await page.emulateMediaType('print');
@@ -825,7 +1038,7 @@ try {
 		printBackground: true
 	});
 	await page.emulateMediaType('screen');
-	await page.click('button[aria-label="Ampliar foto 1 de Capô"]');
+	await page.click('button[aria-label="Ampliar foto 1 de Vidros — Parabrisa"]');
 	await click('Excluir foto');
 	await click('Excluir');
 	await page.waitForFunction(() => !document.querySelector('dialog'));
@@ -839,7 +1052,7 @@ try {
 	await click('Cancelar');
 	await page.goto(base + '/dashboard/checklists/cloud-0');
 	await waitText('Laudo de vistoria');
-	await page.click('button[aria-label="Ampliar foto 1 de Capô"]');
+	await page.click('button[aria-label="Ampliar foto 1 de Vidros — Parabrisa"]');
 	await click('Excluir foto');
 	await click('Excluir');
 	await page.waitForFunction(() => !document.querySelector('dialog'));
@@ -910,11 +1123,40 @@ try {
 	assert(requests.some(r => r.path === '/api/cars/car-fixture'), 'Delivery vehicle is validated through the API');
 	assert.equal(await page.$eval('#client', el => el.value), 'Cliente de Teste');
 	assert(requests.some(r => r.path === '/api/contacts/contact-test'), 'Delivery contact is validated through the API');
+	await click('Interior', false);
+	await page.waitForSelector('#mileage');
+	await page.type('#mileage', '32400');
+	await click('Danos', false);
+	await click('Vidros', false);
+	await page.click('button[aria-label="Editar Parabrisa"]');
+	await waitText('Avaria Pré-existente (Entrega)');
+	await waitText('Trinca no parabrisa.');
+	await click('Novo dano ou agravamento');
+	await click('Quebrado');
+	await click('Salvar item');
+	await page.waitForFunction(() => !document.querySelector('#damage-item-name'));
+	await click('Fechar');
+	await page.waitForFunction(() => !document.querySelector('dialog'));
+	await page.waitForFunction(() => document.body.innerText.includes('1 nova avaria'));
+	await click('Vidros', false);
+	await page.click('button[aria-label="Editar Parabrisa"]');
+	await click('Dano da entrega mantido');
+	await click('Salvar item');
+	await page.waitForFunction(() => !document.querySelector('#damage-item-name'));
+	await click('Fechar');
+	await page.waitForFunction(() => !document.querySelector('dialog'));
+	await page.waitForFunction(() => document.body.innerText.includes('0 novas avarias'));
 	await click('Salvar e sair');
 	await waitText('Olá, Rafael.');
 	const deliveryDraft = await page.evaluate(async () => (
 		await (await import('/src/lib/db.js')).getAllInspections('ui-test-inspector')
 	).find(r => r.deliveryChecklistId === 'ui-linked-delivery'));
+	assert.equal(deliveryDraft.partStates.headlights_left.name, 'Farol esquerdo');
+	assert.equal(deliveryDraft.partStates.headlights_left.isNewDamage, false);
+	assert.equal(deliveryDraft.partStates.headlights_left.deliveryPhotos.length, 1);
+	assert.equal(deliveryDraft.partStates.glass_front.status, 'crack');
+	assert.equal(deliveryDraft.partStates.glass_front.isNewDamage, false);
+	assert.equal(deliveryDraft.partStates.glass_front.deliveryPhotos.length, 1);
 	assert.equal(deliveryDraft.carId, 'car-fixture');
 	assert.equal(deliveryDraft.clientUid, 'historical-test-uid');
 	assert.equal(deliveryDraft.location, null, 'A return must not inherit the delivery location');
@@ -958,6 +1200,15 @@ try {
 			(r) => r.path === '/api/checklists/sync' && r.body?.schemaVersion === 4 && r.body?.location?.latitude === -22.8 && r.body?.carId === 'car-test' && r.body?.contactId === 'contact-test' && r.body?.clientSignatureName === 'Representante de Teste'
 		)
 	);
+	const glassSync = requests.find(r => r.path === '/api/checklists/sync' && r.body?.id === completed.id);
+	assert.equal(glassSync.body.partStates[glassKey].status, 'crack');
+	assert.equal(glassSync.body.partStates[glassKey].photos.length, 1);
+	assert(glassSync.body.partStates[glassKey].photoPaths[0].includes(`/parts/${glassKey}/0.`));
+	assert(requests.some(r => r.method === 'DELETE' && r.path.endsWith('/photos') && r.body.partKey === 'glass_front'));
+	assert.equal(glassSync.body.partStates[headlightKey].name, 'Farol dianteiro esquerdo');
+	assert(glassSync.body.partStates[headlightKey].photoPaths[0].includes(`/parts/${headlightKey}/0.`));
+	console.log('PASS headlights: order below glass, keyboard, independent named items, healthy state, photos, editing, draft persistence, sync, report and delivery inheritance');
+	console.log('PASS glass: enlarged roof, no individual windows, stacked controls, keyboard, statuses, photos, list, draft restoration, offline completion, captured image, report, deletion, delivery comparison and sync');
 	console.log('PASS location: automatic capture, denial/retry, stale response, recapture and draft reload, static map/fallback, offline persistence/sync, report and print');
 	await writeFile(
 		path.join(output, 'results.json'),

@@ -4,13 +4,58 @@ import {
   calculateFuelDiff,
   calculateMileageDiff,
   countDamages,
+  countNewDamages,
   detectNewDamages,
   formatInspectionDateTime,
   formatMileage,
   safeAttachmentUrl,
+  partEntries,
+  partName,
 } from "./inspection.js";
 
 describe("inspection helpers", () => {
+  it('keeps headlights independent and compares each item across delivery and return', () => {
+    const delivery = { headlights_left: { name: 'Farol esquerdo', status: 'crack' }, headlights_right: { name: 'Farol direito', status: 'none' } };
+    const returned = { ...delivery, headlights_left: { name: 'Farol dianteiro esquerdo', status: 'broken', isNewDamage: true } };
+    expect(partEntries(returned, 'headlights')).toHaveLength(2);
+    expect(countDamages(returned)).toBe(1);
+    expect(detectNewDamages(returned, delivery)).toMatchObject([
+      { partId: 'headlights_left', partName: 'Faróis — Farol dianteiro esquerdo', previousStatus: 'crack', isWorsened: true },
+    ]);
+  });
+  it('counts each damaged item, preserves healthy items and matches renamed return items by key', () => {
+    const parts = {
+      interior_seat: { name: 'Banco', status: 'damaged' },
+      interior_panel: { name: 'Painel', status: 'scratch' },
+      glass_front: { name: 'Parabrisa', status: 'crack' },
+      glass_left: { name: 'Vidro esquerdo', status: 'scratch' },
+      glass_back: { name: 'Vidro traseiro', status: 'broken' },
+      interior_rear: { name: 'Banco traseiro', status: 'none' },
+    };
+    expect(countDamages(parts)).toBe(5);
+    expect(partEntries(parts, 'interior')).toHaveLength(3);
+    const returned = { ...parts, glass_front: { ...parts.glass_front, name: 'Parabrisa dianteiro', status: 'broken', isNewDamage: true } };
+    expect(detectNewDamages(returned, parts)).toMatchObject([
+      { partId: 'glass_front', partName: 'Vidros — Parabrisa dianteiro', isWorsened: true, previousStatus: 'crack' },
+    ]);
+    expect(partName('interior_rear', parts.interior_rear)).toBe('Interior da Cabine — Banco traseiro');
+    expect(buildChecklistSummary({ partStates: returned })).toMatchObject({ damageCount: 5, newDamageCount: 1 });
+  });
+
+  it.each([
+    ['maintained', { glass_front: { status: 'crack' } }, { status: 'crack', isNewDamage: false }, 0, false],
+    ['new', {}, { status: 'crack', isNewDamage: true }, 1, false],
+    ['worsened', { glass_front: { status: 'crack' } }, { status: 'broken', isNewDamage: true }, 1, true],
+  ])('counts unified glass damage once when %s on return', (_scenario, delivery, state, expectedNew, worsened) => {
+    const parts = { glass_front: { ...state, name: 'Parabrisa', comments: 'Parabrisa e vidro lateral', photos: ['https://example.test/glass.jpg'] } };
+    expect(countDamages(parts)).toBe(1);
+    expect(countNewDamages(parts)).toBe(expectedNew);
+    const detected = detectNewDamages(parts, delivery);
+    expect(detected).toHaveLength(expectedNew);
+    if (expectedNew) expect(detected[0]).toMatchObject({ partId: 'glass_front', partName: 'Vidros — Parabrisa', isWorsened: worsened });
+    expect(buildChecklistSummary({ partStates: parts })).toMatchObject({ damageCount: 1, newDamageCount: expectedNew });
+  });
+
   it("counts only actual damage states and builds lightweight summaries", () => {
     const report = {
       schemaVersion: 4,

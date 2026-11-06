@@ -41,6 +41,92 @@ function validPayload(overrides = {}) {
 }
 
 describe("checklist server validation", () => {
+  it.each([undefined, null, '', '   ', 'x'.repeat(101)])('requires a bounded name for each item: %j', name => {
+    for (const category of ['glass', 'interior', 'headlights']) {
+      expect(() => validateChecklistPayload(validPayload({ partStates: {
+        [`${category}_first`]: { name, status: 'none', comments: '', photos: [], photoPaths: [] },
+      } }), 'owner-a')).toThrow();
+    }
+  });
+
+  it.each(['glass', 'interior', 'headlights', 'glass_../bad', 'interior_a.b', 'headlights_../bad', 'unknown_item'])('rejects invalid item keys %s', key => {
+    expect(() => validateChecklistPayload(validPayload({ partStates: {
+      [key]: { name: 'Item', status: 'none', comments: '', photos: [], photoPaths: [] },
+    } }), 'owner-a')).toThrow('Invalid inspection part.');
+  });
+
+  it('preserves independent named items, including healthy items and multiple photos per item', () => {
+    const state = { status: 'crack', comments: 'Observação', photos: [], photoPaths: [] };
+    const partStates = {
+      glass_front: { ...state, name: ' Parabrisa ' },
+      glass_left: { ...state, name: 'Vidro esquerdo', status: 'scratch' },
+      interior_seat: { ...state, name: 'Banco', status: 'damaged' },
+      interior_panel: { ...state, name: 'Painel', status: 'none' },
+      headlights_left: { ...state, name: 'Farol esquerdo', status: 'broken' },
+      headlights_right: { ...state, name: 'Farol direito', status: 'none' },
+    };
+    const report = validateChecklistPayload(validPayload({ partStates }), 'owner-a');
+    expect(Object.keys(report.partStates)).toHaveLength(6);
+    expect(report.partStates.glass_front.name).toBe('Parabrisa');
+    expect(report.partStates.interior_panel.status).toBe('none');
+    expect(report.partStates.headlights_left.name).toBe('Farol esquerdo');
+    expect(report.partStates.headlights_right.status).toBe('none');
+  });
+
+  function glassState(count = 1) {
+    return {
+      name: 'Parabrisa',
+      status: 'crack',
+      comments: 'Trinca no parabrisa e risco no vidro lateral.',
+      photos: Array.from({ length: count }, (_, index) => `https://storage.example/glass-${index}.jpg`),
+      photoPaths: Array.from({ length: count }, (_, index) => `checklists/owner-a/ins-valid/parts/glass_front/${index}.jpg`),
+    };
+  }
+
+  it.each(['none', 'scratch', 'dent', 'crack', 'broken', 'damaged'])('accepts a named glass item with status %s', status => {
+    const glass = { ...glassState(), status };
+    const report = validateChecklistPayload(validPayload({ partStates: { glass_front: glass } }), 'owner-a');
+    expect(report.partStates).toMatchObject({ glass_front: glass });
+    expect(Object.keys(report.partStates)).toEqual(['glass_front']);
+  });
+
+  it.each(['windshield', 'rear_glass', 'left_front_window', 'left_rear_window', 'right_front_window', 'right_rear_window'])('rejects removed glass identifier %s', partId => {
+    expect(() => validateChecklistPayload(validPayload({ partStates: { [partId]: glassState() } }), 'owner-a'))
+      .toThrow('Invalid inspection part.');
+  });
+
+  it('preserves glass in a linked delivery snapshot and drops removed identifiers', () => {
+    const glass = glassState();
+    const report = validateChecklistPayload(validPayload({
+      inspectionType: 'Devolução',
+      deliveryChecklistId: 'delivery',
+      deliverySnapshot: { id: 'delivery', partStates: { glass_front: glass, windshield: glass, rear_glass: glass, left_front_window: glass, left_rear_window: glass, right_front_window: glass, right_rear_window: glass } },
+      partStates: { glass_front: { ...glass, isNewDamage: false, deliveryStatus: 'crack' } },
+    }), 'owner-a');
+    expect(report.deliverySnapshot.partStates).toEqual({ glass_front: { name: glass.name, status: glass.status, comments: glass.comments, photos: glass.photos } });
+    expect(report.partStates.glass_front).toMatchObject({ isNewDamage: false, deliveryStatus: 'crack' });
+  });
+
+  it('limits glass to six photos and the complete inspection to 24 photos', () => {
+    const glass = glassState(6);
+    const stateFor = (partId, count) => {
+      const state = glassState(count);
+      const { name, ...rest } = state;
+      return { ...rest, photoPaths: state.photoPaths.map(path => path.replace('/glass_front/', `/${partId}/`)) };
+    };
+    const partStates = {
+      glass_front: glass,
+      glass_left: { ...stateFor('glass_left', 6), name: 'Vidro esquerdo' },
+      hood: stateFor('hood', 6),
+      headlights_left: { ...stateFor('headlights_left', 6), name: 'Farol esquerdo' },
+    };
+    expect(validateChecklistPayload(validPayload({ partStates }), 'owner-a').partStates.glass_front.photos).toHaveLength(6);
+    expect(() => validateChecklistPayload(validPayload({ partStates: { glass_front: glassState(7) } }), 'owner-a'))
+      .toThrow('Invalid damage photo count.');
+    expect(() => validateChecklistPayload(validPayload({ partStates: { ...partStates, trunk: stateFor('trunk', 1) } }), 'owner-a'))
+      .toThrow('Inspection contains too many photos.');
+  });
+
   it.each([null, undefined, {}, { latitude: 91, longitude: 0, accuracy: 0, capturedAt: '2026-11-06T12:00:00.000Z' }])('rejects missing or invalid location %j', location => {
     expect(() => validateChecklistPayload(validPayload({ location }), 'owner-a')).toThrow('Localização inválida');
   });

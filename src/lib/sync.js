@@ -2,6 +2,7 @@ import { storage } from "$lib/firebaseStorage.js";
 import { deleteInspection, getInspection, saveInspection } from '$lib/db.js';
 import { getDownloadURL, ref, uploadBytesResumable } from "firebase/storage";
 import { authenticatedFetch } from "$lib/api.js";
+import { isItemCategory, partCategory } from '$lib/inspection.js';
 import { isValidLocation } from '$lib/inspectionLocation.js';
 
 const UPLOAD_CONCURRENCY = 2;
@@ -66,6 +67,7 @@ function cleanPartStates(partStates = {}) {
   for (const [partKey, state] of Object.entries(partStates)) {
     if (!state || typeof state !== "object") continue;
     clean[partKey] = {
+      ...(isItemCategory(partCategory(partKey)) ? { name: String(state.name || '').trim() } : {}),
       status: state.status || "none",
       comments: String(state.comments || "").slice(0, 1000),
       photos: Array.isArray(state.photos) ? state.photos.filter(Boolean).slice(0, 6) : [],

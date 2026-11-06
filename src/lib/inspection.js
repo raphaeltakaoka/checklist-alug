@@ -1,24 +1,20 @@
 export const PART_NAMES = Object.freeze({
   front_bumper: "Parachoque Dianteiro",
   hood: "Capô",
-  windshield: "Parabrisa",
   roof: "Teto",
-  rear_glass: "Vidro Traseiro",
   trunk: "Porta-Malas / Traseira",
   rear_bumper: "Parachoque Traseiro",
   left_fender: "Paralama Diant. Esq.",
   left_front_door: "Porta Diant. Esq.",
-  left_front_window: "Vidro Diant. Esq.",
   left_rear_door: "Porta Tras. Esq.",
-  left_rear_window: "Vidro Tras. Esq.",
   left_rear_quarter: "Lateral Tras. Esq.",
   right_fender: "Paralama Diant. Dir.",
   right_front_door: "Porta Diant. Dir.",
-  right_front_window: "Vidro Diant. Dir.",
   right_rear_door: "Porta Tras. Dir.",
-  right_rear_window: "Vidro Tras. Dir.",
   right_rear_quarter: "Lateral Tras. Dir.",
   interior: "Interior da Cabine",
+  glass: "Vidros",
+  headlights: 'Faróis',
   left_front_wheel: "Roda Diant. Esq.",
   right_front_wheel: "Roda Diant. Dir.",
   left_rear_wheel: "Roda Tras. Esq.",
@@ -33,6 +29,33 @@ export const STATUS_LABELS = Object.freeze({
   broken: "Quebrado",
   damaged: "Danificado",
 });
+
+export function isItemCategory(category) {
+  return category === 'interior' || category === 'glass' || category === 'headlights';
+}
+
+// Item keys stay stable across edits and delivery/return inspections.
+export function partCategory(partId) {
+  if (typeof partId !== 'string') return null;
+  if (Object.hasOwn(PART_NAMES, partId)) return partId;
+  return /^(interior|glass|headlights)_[A-Za-z0-9-]{1,64}$/.exec(partId)?.[1] || null;
+}
+
+export function isValidPartKey(partId) {
+  const category = partCategory(partId);
+  return Boolean(category && (!isItemCategory(category) || category !== partId));
+}
+
+export function partEntries(partStates, category) {
+  return Object.entries(partStates || {}).filter(([key]) => partCategory(key) === category);
+}
+
+export function partName(partId, state = {}) {
+  const category = partCategory(partId);
+  return isItemCategory(category)
+    ? `${PART_NAMES[category]} — ${state.name || 'Item'}`
+    : PART_NAMES[partId] || partId;
+}
 
 export const STATUS_BADGE_STYLES = Object.freeze({
   scratch:
@@ -65,7 +88,7 @@ export function detectNewDamages(returnPartStates = {}, deliveryPartStates = {})
     if (state.isNewDamage || !hadDeliveryDamage) {
       newDamages.push({
         partId,
-        partName: PART_NAMES[partId] || partId,
+        partName: partName(partId, state),
         status: state.status,
         comments: state.comments || "",
         photos: state.photos || [],

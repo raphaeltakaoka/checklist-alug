@@ -1,7 +1,9 @@
 <script>
   import { mediaPreviewUrl } from "$lib/mediaPreview.js";
   import {
-    PART_NAMES,
+    partName,
+    isItemCategory,
+    partCategory,
     STATUS_LABELS,
     calculateFuelDiff,
     calculateMileageDiff,
@@ -26,7 +28,7 @@
   let error = $state("");
   let parts = $derived(
     Object.entries(inspection.partStates || {}).filter(
-      ([, part]) => part.status !== "none" || part.photos?.length || part.comments,
+      ([key, part]) => isItemCategory(partCategory(key)) || part.status !== "none" || part.photos?.length || part.comments,
     ),
   );
   let mileageDiff = $derived(
@@ -277,11 +279,11 @@
     {#if !parts.length}<p class="muted">Nenhum dano registrado nesta vistoria.</p>{/if}
     {#each parts as [partId, part] (partId)}<div class="report-part">
         <div class="section-heading">
-          <h3>{PART_NAMES[partId] || partId}</h3>
+          <h3>{partName(partId, part)}</h3>
           <div class="inline" style="gap:6px">
             {#if part.isNewDamage}
               <span class="badge danger">Nova avaria</span>
-            {:else if part.deliveryStatus}
+            {:else if part.deliveryStatus && part.deliveryStatus !== "none"}
               <span class="badge">Pré-existente</span>
             {/if}
             <span class="badge warning">{STATUS_LABELS[part.status] || part.status}</span>
@@ -291,11 +293,11 @@
         {#if part.photos?.length}<div class="photo-grid">
             {#each part.photos as photo, index (photo)}<div class="photo-tile">
                 <button
-                  aria-label={`Ampliar foto ${index + 1} de ${PART_NAMES[partId]}`}
+                  aria-label={`Ampliar foto ${index + 1} de ${partName(partId, part)}`}
                   onclick={() => (preview = { value: photo, part: partId, index })}
                   ><img
                     src={mediaPreviewUrl(photo)}
-                    alt={`${PART_NAMES[partId]} — foto ${index + 1}`}
+                    alt={`${partName(partId, part)} — foto ${index + 1}`}
                     loading="eager"
                   /></button
                 >
@@ -336,13 +338,13 @@
   </section>
 </article>
 {#if preview}<Dialog
-    title={preview.part ? PART_NAMES[preview.part] : "Documento do cliente"}
+    title={preview.part ? partName(preview.part, inspection.partStates[preview.part]) : "Documento do cliente"}
     wide
     onclose={() => (preview = null)}
     ><img
       class="preview-image"
       src={mediaPreviewUrl(preview.value)}
-      alt={preview.part ? `Foto de ${PART_NAMES[preview.part]}` : "CNH do cliente"}
+      alt={preview.part ? `Foto de ${partName(preview.part, inspection.partStates[preview.part])}` : "CNH do cliente"}
     />{#snippet footer()}{#if preview.part && ondeletephoto}<button
           class="btn"
           onclick={() => {

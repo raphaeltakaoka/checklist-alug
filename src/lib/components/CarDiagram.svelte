@@ -1,5 +1,5 @@
 <script>
-  import { PART_NAMES } from "$lib/inspection.js";
+  import { PART_NAMES, countDamages, partEntries } from '$lib/inspection.js';
   // Svelte 5 Runes for properties
   let { activePart = $bindable(), partStates = {} } = $props();
   let svgElement;
@@ -172,25 +172,12 @@
         onkeydown={e => handleKeyDown(e, "hood")}
       />
 
-      <!-- Windshield -->
-      <path
-        d="M 54,114 L 146,114 C 143,128 138,135 132,138 L 68,138 C 62,135 57,128 54,114 Z"
-        class="transition-colors duration-300 cursor-pointer focus:outline-none focus:stroke-blue-500 {getSVGPartColor(
-          'windshield',
-        )} {activePart === 'windshield' ? 'stroke-blue-500 stroke-[2px]' : 'stroke-1'}"
-        role="button"
-        aria-label={PART_NAMES["windshield"]}
-        tabindex="0"
-        onclick={() => (activePart = "windshield")}
-        onkeydown={e => handleKeyDown(e, "windshield")}
-      />
-
       <!-- Roof -->
       <rect
-        x="58"
-        y="142"
-        width="84"
-        height="85"
+        x="50"
+        y="114"
+        width="100"
+        height="134"
         rx="8"
         class="transition-colors duration-300 cursor-pointer focus:outline-none focus:stroke-blue-500 {getSVGPartColor(
           'roof',
@@ -200,87 +187,6 @@
         tabindex="0"
         onclick={() => (activePart = "roof")}
         onkeydown={e => handleKeyDown(e, "roof")}
-      />
-
-      <!-- Left Front Window -->
-      <rect
-        x="49"
-        y="144"
-        width="7"
-        height="38"
-        rx="2"
-        class="transition-colors duration-300 cursor-pointer focus:outline-none focus:stroke-blue-500 {getSVGPartColor(
-          'left_front_window',
-        )} {activePart === 'left_front_window' ? 'stroke-blue-500 stroke-[2px]' : 'stroke-1'}"
-        role="button"
-        aria-label={PART_NAMES["left_front_window"]}
-        tabindex="0"
-        onclick={() => (activePart = "left_front_window")}
-        onkeydown={e => handleKeyDown(e, "left_front_window")}
-      />
-
-      <!-- Left Rear Window -->
-      <rect
-        x="49"
-        y="186"
-        width="7"
-        height="38"
-        rx="2"
-        class="transition-colors duration-300 cursor-pointer focus:outline-none focus:stroke-blue-500 {getSVGPartColor(
-          'left_rear_window',
-        )} {activePart === 'left_rear_window' ? 'stroke-blue-500 stroke-[2px]' : 'stroke-1'}"
-        role="button"
-        aria-label={PART_NAMES["left_rear_window"]}
-        tabindex="0"
-        onclick={() => (activePart = "left_rear_window")}
-        onkeydown={e => handleKeyDown(e, "left_rear_window")}
-      />
-
-      <!-- Right Front Window -->
-      <rect
-        x="144"
-        y="144"
-        width="7"
-        height="38"
-        rx="2"
-        class="transition-colors duration-300 cursor-pointer focus:outline-none focus:stroke-blue-500 {getSVGPartColor(
-          'right_front_window',
-        )} {activePart === 'right_front_window' ? 'stroke-blue-500 stroke-[2px]' : 'stroke-1'}"
-        role="button"
-        aria-label={PART_NAMES["right_front_window"]}
-        tabindex="0"
-        onclick={() => (activePart = "right_front_window")}
-        onkeydown={e => handleKeyDown(e, "right_front_window")}
-      />
-
-      <!-- Right Rear Window -->
-      <rect
-        x="144"
-        y="186"
-        width="7"
-        height="38"
-        rx="2"
-        class="transition-colors duration-300 cursor-pointer focus:outline-none focus:stroke-blue-500 {getSVGPartColor(
-          'right_rear_window',
-        )} {activePart === 'right_rear_window' ? 'stroke-blue-500 stroke-[2px]' : 'stroke-1'}"
-        role="button"
-        aria-label={PART_NAMES["right_rear_window"]}
-        tabindex="0"
-        onclick={() => (activePart = "right_rear_window")}
-        onkeydown={e => handleKeyDown(e, "right_rear_window")}
-      />
-
-      <!-- Rear Glass -->
-      <path
-        d="M 54,248 L 146,248 C 143,234 138,230 132,230 L 68,230 C 62,230 57,234 54,248 Z"
-        class="transition-colors duration-300 cursor-pointer focus:outline-none focus:stroke-blue-500 {getSVGPartColor(
-          'rear_glass',
-        )} {activePart === 'rear_glass' ? 'stroke-blue-500 stroke-[2px]' : 'stroke-1'}"
-        role="button"
-        aria-label={PART_NAMES["rear_glass"]}
-        tabindex="0"
-        onclick={() => (activePart = "rear_glass")}
-        onkeydown={e => handleKeyDown(e, "rear_glass")}
       />
 
       <!-- Trunk -->
@@ -437,7 +343,36 @@
     </svg>
   </div>
 
-  <button class="btn" type="button" onclick={() => (activePart = "interior")}
-    >Interior da cabine</button
-  >
+  <div class="flex flex-col gap-3 lg:min-w-48">
+    {#each [['interior', 'Interior da cabine'], ['glass', 'Vidros'], ['headlights', 'Faróis']] as [category, label] (category)}
+      {@const count = countDamages(Object.fromEntries(partEntries(partStates, category)))}
+      <button class="btn damage-category" type="button" data-category={category}
+        aria-label={count ? `${label}, ${count} ${count === 1 ? 'item com dano' : 'itens com danos'}` : label}
+        onclick={() => (activePart = category)}>
+        <span>{label}</span>
+        {#if count > 0}<span class="damage-indicator" aria-hidden="true">{count}</span>{/if}
+      </button>
+    {/each}
+  </div>
 </div>
+
+<style>
+  .damage-category {
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .damage-indicator {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    min-width: 22px;
+    height: 22px;
+    padding: 0 6px;
+    border-radius: 999px;
+    background: #b91c1c;
+    color: #fff;
+    font-size: 12px;
+    font-weight: 700;
+  }
+</style>

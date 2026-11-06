@@ -8,15 +8,7 @@ import {
 	requireAuth
 } from '$lib/server/auth';
 import { readExactJson } from '$lib/server/requestValidation';
-
-const PART_IDS = new Set([
-	'front_bumper', 'hood', 'windshield', 'roof', 'rear_glass', 'trunk', 'rear_bumper',
-	'left_fender', 'left_front_door', 'left_front_window', 'left_rear_door',
-	'left_rear_window', 'left_rear_quarter', 'right_fender', 'right_front_door',
-	'right_front_window', 'right_rear_door', 'right_rear_window', 'right_rear_quarter',
-	'interior', 'left_front_wheel', 'right_front_wheel', 'left_rear_wheel',
-	'right_rear_wheel'
-]);
+import { isValidPartKey } from '$lib/inspection.js';
 
 export async function DELETE({ request, params }) {
 	try {
@@ -26,7 +18,7 @@ export async function DELETE({ request, params }) {
 		const decodedToken = await requireAuth(request);
 		const payload = await readExactJson(request, ['partKey', 'photoPath']);
 		if (
-			!PART_IDS.has(payload.partKey) ||
+			!isValidPartKey(payload.partKey) ||
 			typeof payload.photoPath !== 'string' ||
 			payload.photoPath.length > 300
 		) {
