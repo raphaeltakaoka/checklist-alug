@@ -90,7 +90,7 @@ export async function POST({ request }) {
         if (path) report.location.mapImagePath = path;
       }
     } catch {
-      console.warn('Checklist location map unavailable.');
+      // Map generation has already logged the failed step.
     }
 
     return json(

@@ -35,9 +35,15 @@ beforeEach(() => {
 	mocks.exists.mockResolvedValue([false]);
 	mocks.download.mockResolvedValue([png]);
 	mocks.update.mockImplementation((_ref, _field, path) => { report.location.mapImagePath = path; });
-	mocks.fetch.mockImplementation(async () => new Response(png, { headers: { 'content-type': 'image/png' } }));
+	// Geoapify defaults to JPEG unless the request explicitly asks for PNG.
+	mocks.fetch.mockImplementation(async input => new URL(input).searchParams.get('format') === 'png'
+		? new Response(png, { headers: { 'content-type': 'image/png' } })
+		: new Response(new Uint8Array([0xff, 0xd8, 0xff]), { headers: { 'content-type': 'image/jpeg' } }));
 });
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+	vi.unstubAllGlobals();
+	vi.restoreAllMocks();
+});
 
 it('stores one PNG at the captured point and reuses it for later authorized reads', async () => {
 	const response = await POST(event('POST'));
@@ -57,12 +63,26 @@ it('stores one PNG at the captured point and reuses it for later authorized read
 });
 
 it('keeps coordinates available when the provider fails and permits a later retry', async () => {
-	mocks.fetch.mockResolvedValueOnce(new Response('quota', { status: 429 }));
+	const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+	mocks.fetch.mockResolvedValueOnce(new Response('private provider response', { status: 429 }));
 	expect((await POST(event('POST'))).status).toBe(503);
+	expect(warn.mock.calls).toEqual([['Checklist location map unavailable.', {
+		stage: 'geoapify', reason: 'http-error', status: 429
+	}]]);
 	expect(report.location).toMatchObject({ latitude: -23.55, longitude: -46.63 });
 	expect(report.location).not.toHaveProperty('mapImagePath');
 	expect(mocks.save).not.toHaveBeenCalled();
 	expect((await POST(event('POST'))).status).toBe(200);
+});
+
+it('distinguishes a Storage failure from a provider failure without logging raw errors', async () => {
+	const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+	mocks.save.mockRejectedValueOnce(Object.assign(new Error('private Storage response'), { code: 403 }));
+	expect((await POST(event('POST'))).status).toBe(503);
+	expect(warn.mock.calls).toEqual([['Checklist location map unavailable.', {
+		stage: 'storage-save', reason: 'request-failed', code: 403
+	}]]);
+	expect(report.location).not.toHaveProperty('mapImagePath');
 });
 
 it('rejects an unrelated account before requesting or serving the image', async () => {
