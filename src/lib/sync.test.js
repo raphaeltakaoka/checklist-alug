@@ -27,39 +27,41 @@ beforeEach(() => {
 describe('inspection synchronization', () => {
 	it('synchronizes independent named items and their stable photo paths', async () => {
 		const partStates = {
-			glass_front: { name: 'Parabrisa', status: 'crack', photos: ['https://example.test/front.jpg'], photoPaths: ['checklists/owner-a/ins-items/parts/glass_front/0.jpg'] },
-			glass_left: { name: 'Vidro esquerdo', status: 'scratch', photos: [], photoPaths: [] },
-			interior_seat: { name: 'Banco', status: 'none', photos: [], photoPaths: [] }
+			windows: {
+				front: { name: 'Parabrisa', status: 'crack', photos: ['https://example.test/front.jpg'], photoPaths: ['checklists/owner-a/ins-items/parts/windows_front/0.jpg'] },
+				left: { name: 'Vidro esquerdo', status: 'scratch', photos: [], photoPaths: [] },
+			},
+			interior: { seat: { name: 'Banco', status: 'none', photos: [], photoPaths: [] } }
 		};
-		const report = { id: 'ins-items', ownerUid: 'owner-a', schemaVersion: 4, partStates, location };
+		const report = { id: 'ins-items', ownerUid: 'owner-a', schemaVersion: 5, partStates, location };
 		getInspection.mockResolvedValue(report);
 		authenticatedFetch.mockResolvedValue({ json: async () => ({ report }) });
 		await syncInspectionToCloud(report);
 		expect(JSON.parse(authenticatedFetch.mock.calls[0][1].body).partStates).toMatchObject(partStates);
 	});
 	it('rejects missing location before uploading, saving or deleting queued data', async () => {
-		const report = { id: 'missing-location', ownerUid: 'owner-a', schemaVersion: 4 };
+		const report = { id: 'missing-location', ownerUid: 'owner-a', schemaVersion: 5 };
 		getInspection.mockResolvedValue(report);
 		await expect(syncInspectionToCloud(report)).rejects.toThrow('Localização inválida');
 		expect(authenticatedFetch).not.toHaveBeenCalled();
 		expect(saveInspection).not.toHaveBeenCalled();
 		expect(deleteInspection).not.toHaveBeenCalled();
 	});
-	it('sends version 4 vehicle, contact and signer fields and preserves the server-resolved UID', async () => {
-		const report = { id: 'ins-contact', ownerUid: 'owner-a', schemaVersion: 4, carId: 'car-id', contactId: 'doc-id', clientUid: 'old-uid', clientSignatureName: 'Representante', partStates: {}, signatureNameInitialized: true };
+	it('sends version 5 vehicle, contact and signer fields and preserves the server-resolved UID', async () => {
+		const report = { id: 'ins-contact', ownerUid: 'owner-a', schemaVersion: 5, carId: 'car-id', contactId: 'doc-id', clientUid: 'old-uid', clientSignatureName: 'Representante', partStates: {}, signatureNameInitialized: true };
 		report.location = location;
 		getInspection.mockResolvedValue(report);
 		authenticatedFetch.mockResolvedValue({ json: async () => ({ report: { ...report, clientUid: 'authoritative-uid' } }) });
 		expect(await syncInspectionToCloud(report)).toMatchObject({ clientUid: 'authoritative-uid' });
 		const payload = JSON.parse(authenticatedFetch.mock.calls[0][1].body);
-		expect(payload).toMatchObject({ schemaVersion: 4, carId: 'car-id', contactId: 'doc-id', clientSignatureName: 'Representante' });
+		expect(payload).toMatchObject({ schemaVersion: 5, carId: 'car-id', contactId: 'doc-id', clientSignatureName: 'Representante' });
 		expect(payload.signatureNameInitialized).toBeUndefined();
 		expect(payload.location).toEqual(location);
 		expect(deleteInspection).toHaveBeenCalledExactlyOnceWith('owner-a', report.id);
 		expect(saveInspection).toHaveBeenCalledTimes(1);
 	});
 
-	it.each([undefined, 2, 3, 5])('rejects unsupported schema %s before uploading or writing to the cloud', async schemaVersion => {
+	it.each([undefined, 2, 3, 4, 6])('rejects unsupported schema %s before uploading or writing to the cloud', async schemaVersion => {
 		const report = { id: 'ins-unsupported', ownerUid: 'owner-a', schemaVersion, partStates: {} };
 		getInspection.mockResolvedValue(report);
 		await expect(syncInspectionToCloud(report)).rejects.toThrow('Unsupported inspection schema version.');
@@ -69,7 +71,7 @@ describe('inspection synchronization', () => {
 	});
 
 	it('waits for cloud confirmation before deleting the local report', async () => {
-		const report = { id: 'ins-confirmation', ownerUid: 'owner-a', schemaVersion: 4, partStates: {} };
+		const report = { id: 'ins-confirmation', ownerUid: 'owner-a', schemaVersion: 5, partStates: {} };
 		report.location = location;
 		getInspection.mockResolvedValue(report);
 		let confirm;
@@ -101,7 +103,7 @@ describe('inspection synchronization', () => {
 
 	it('records retry metadata without losing queued media after a failed API write', async () => {
 		const report = {
-			schemaVersion: 4,
+			schemaVersion: 5,
 			id: 'ins-retry',
 			ownerUid: 'owner-a',
 			partStates: {},
@@ -127,7 +129,7 @@ describe('inspection synchronization', () => {
 	});
 
 	it('keeps a retryable record when local cleanup fails after the cloud write', async () => {
-		const report = { id: 'ins-cleanup', ownerUid: 'owner-a', schemaVersion: 4, partStates: {} };
+		const report = { id: 'ins-cleanup', ownerUid: 'owner-a', schemaVersion: 5, partStates: {} };
 		report.location = location;
 		getInspection.mockResolvedValue(report);
 		authenticatedFetch.mockResolvedValue({ json: async () => ({ report }) });

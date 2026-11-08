@@ -29,10 +29,12 @@ export async function DELETE({ request, params }) {
 		await batch.commit();
 
 		if (inspection?.ownerUid) {
-			await adminStorage.bucket().deleteFiles({
-				prefix: `checklists/${inspection.ownerUid}/${params.id}/`,
-				force: true
-			});
+			await Promise.all(['checklists', 'checklist-location-maps'].map(folder =>
+				adminStorage.bucket().deleteFiles({
+					prefix: `${folder}/${inspection.ownerUid}/${params.id}/`,
+					force: true
+				})
+			));
 		}
 
 		return json({ success: true }, { headers: { 'cache-control': 'no-store' } });

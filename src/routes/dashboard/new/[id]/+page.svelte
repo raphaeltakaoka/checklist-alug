@@ -1,4 +1,5 @@
 <script>
+	import { getPartState, partStateEntries } from '$lib/inspection.js';
 	import { onDestroy } from 'svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
@@ -22,7 +23,7 @@
 			'carDiagramImage'
 		])
 			revokeMediaPreview(record[key]);
-		for (const part of Object.values(record.partStates || {}))
+		for (const part of partStateEntries(record.partStates).map(([, state]) => state))
 			for (const photo of part.photos || []) revokeMediaPreview(photo);
 	}
 	async function load(id) {
@@ -69,7 +70,7 @@
 	async function removePhoto(partId, index) {
 		await latestForMutation();
 		const updated = $state.snapshot(inspection);
-		const part = updated.partStates[partId];
+		const part = getPartState(updated.partStates, partId);
 		if (inspection.synced) {
 			const photoPath = part.photoPaths?.[index];
 			if (!photoPath) throw new Error('Caminho da foto indisponível.');

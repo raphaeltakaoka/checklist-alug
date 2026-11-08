@@ -6,7 +6,7 @@ import {
 } from './inspectionForm.js';
 
 const report = {
-	schemaVersion: 4,
+	schemaVersion: 5,
 	location: { latitude: -23.55052, longitude: -46.633308, accuracy: 12, capturedAt: '2026-11-06T12:00:00.000Z' },
 	licensePlate: 'ABC1D23',
 	carId: 'car-id',

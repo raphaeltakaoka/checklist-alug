@@ -1,5 +1,5 @@
 import { isValidLocation } from '$lib/inspectionLocation.js';
-import { isItemCategory, partCategory } from '$lib/inspection.js';
+import { isItemCategory, partCategory, partStateEntries } from '$lib/inspection.js';
 
 /** Validation shared by step links, Continue, and final submission. */
 export function inspectionErrors(report, throughStep = 1) {
@@ -22,10 +22,10 @@ export function inspectionErrors(report, throughStep = 1) {
 	if (throughStep >= 2 && !String(report.mileage || '').replace(/\D/g, ''))
 		errors.mileage = 'Informe a quilometragem do veículo.';
 	if (throughStep >= 3) {
-		if (Object.entries(report.partStates || {}).some(([key, part]) =>
+		if (partStateEntries(report.partStates).some(([key, part]) =>
 			isItemCategory(partCategory(key)) && (typeof part.name !== 'string' || !part.name.trim() || part.name.length > 100)))
 			errors.partStates = 'Informe o nome de cada item (até 100 caracteres).';
-		const states = Object.values(report.partStates || {});
+		const states = partStateEntries(report.partStates).map(([, state]) => state);
 		if (
 			states.some((part) => (part.photos?.length || 0) > 6) ||
 			states.reduce((sum, part) => sum + (part.photos?.length || 0), 0) > 24

@@ -5,7 +5,7 @@
 	import { doc, getDoc } from 'firebase/firestore';
 	import { authState } from '$lib/auth.svelte.js';
 	import { authenticatedFetch } from '$lib/api.js';
-	import { normalizeCloudInspection } from '$lib/inspection.js';
+	import { normalizeCloudInspection, getPartState } from '$lib/inspection.js';
 	import InspectionReport from '$lib/components/InspectionReport.svelte';
 	import Notice from '$lib/components/Notice.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
@@ -48,7 +48,7 @@
 		request++;
 	});
 	async function removePhoto(partKey, index) {
-		const photoPath = inspection.partStates[partKey].photoPaths?.[index];
+		const photoPath = getPartState(inspection.partStates, partKey)?.photoPaths?.[index];
 		if (!photoPath) throw new Error('Caminho da foto indisponível.');
 		const response = await authenticatedFetch(
 			`/api/checklists/${encodeURIComponent(inspection.id)}/photos`,

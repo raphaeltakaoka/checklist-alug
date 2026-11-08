@@ -11,6 +11,8 @@ vi.mock('$lib/server/admin', () => ({
 	}
 }));
 
+vi.mock('$lib/server/checklistLocationMap.js', () => ({ ensureChecklistLocationMap: vi.fn().mockResolvedValue('') }));
+
 const { POST } = await import('./+server.js');
 const absent = { exists: false, data: () => undefined };
 const document = (data, id = 'contact-id') => ({ id, exists: true, data: () => data });
@@ -18,7 +20,7 @@ const car = document({ plate: 'ABC-1D23', make: 'Fiat', model: 'Argo' }, 'car-id
 const withContact = contact => ref => ref.collection === 'cars' ? car : contact;
 function payload(overrides = {}) {
 	return {
-		schemaVersion: 4, id: 'ins-valid', ownerUid: 'owner-a', licensePlate: 'ABC1D23', carId: 'car-id', inspectionType: 'Entrega',
+		schemaVersion: 5, id: 'ins-valid', ownerUid: 'owner-a', licensePlate: 'ABC1D23', carId: 'car-id', inspectionType: 'Entrega',
 		location: { latitude: -23.55052, longitude: -46.633308, accuracy: 12, capturedAt: '2026-11-06T12:00:00.000Z' },
 		inspectorName: 'Inspetor', clientName: 'Maria', contactId: 'contact-id', clientUid: 'forged-uid', clientSignatureName: 'Representante',
 		inspectionDateTime: '2026-10-06T12:00:00.000Z', clientLicensePhoto: 'https://example.test/license.jpg',
@@ -58,7 +60,7 @@ describe('shared profile permissions during sync', () => {
 		profile({ 'checklists.update': true });
 		expect((await sync()).status).toBe(403);
 		profile({ 'checklists.create': true });
-		mocks.getAll.mockResolvedValue([document({ schemaVersion: 4, ownerUid: 'owner-a' }), absent]);
+		mocks.getAll.mockResolvedValue([document({ schemaVersion: 5, ownerUid: 'owner-a' }), absent]);
 		expect((await sync()).status).toBe(403);
 		expect(mocks.set).not.toHaveBeenCalled();
 	});
@@ -116,7 +118,7 @@ describe('catalog validation during checklist sync', () => {
 		expect(response.status).toBe(200);
 		expect(mocks.get).toHaveBeenCalledWith({ collection: 'contacts', id: 'contact-id' });
 		expect((await response.json()).report).toMatchObject({ clientUid: uid, clientSignatureName: 'Representante' });
-		expect(mocks.set.mock.calls[0][1]).toMatchObject({ schemaVersion: 4, contactId: 'contact-id', clientUid: uid });
+		expect(mocks.set.mock.calls[0][1]).toMatchObject({ schemaVersion: 5, contactId: 'contact-id', clientUid: uid });
 	});
 	it('does not write an inspection linked to a removed contact', async () => {
 		mocks.get.mockImplementation(withContact(absent));
@@ -124,18 +126,18 @@ describe('catalog validation during checklist sync', () => {
 		expect(mocks.set).not.toHaveBeenCalled();
 	});
 	it('preserves ownership checks', async () => {
-		mocks.getAll.mockResolvedValue([document({ schemaVersion: 4, ownerUid: 'other-user' }, 'ins-valid'), absent]);
+		mocks.getAll.mockResolvedValue([document({ schemaVersion: 5, ownerUid: 'other-user' }, 'ins-valid'), absent]);
 		expect((await sync()).status).toBe(403);
 		expect(mocks.set).not.toHaveBeenCalled();
 	});
-	it.each([undefined, 2, 3, 5])('rejects unsupported schema %s even for a new document', async schemaVersion => {
+	it.each([undefined, 2, 3, 4, 6])('rejects unsupported schema %s even for a new document', async schemaVersion => {
 		const response = await sync(payload({ schemaVersion }));
 		expect(response.status).toBe(400);
 		expect(await response.json()).toEqual({ error: 'Unsupported inspection schema version.' });
 		expect(mocks.get).not.toHaveBeenCalled();
 		expect(mocks.set).not.toHaveBeenCalled();
 	});
-	it('rejects unauthorized or incomplete version 4 writes', async () => {
+	it('rejects unauthorized or incomplete version 5 writes', async () => {
 		expect((await sync(payload(), '')).status).toBe(401);
 		expect((await sync(payload({ clientSignatureName: ' ' }))).status).toBe(400);
 		expect((await sync(payload({ contactId: null }))).status).toBe(400);

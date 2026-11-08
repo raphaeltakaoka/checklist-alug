@@ -55,7 +55,7 @@ preserves the inspector's owner filter, and sorts the matching reports newest fi
 The plate query uses equality filters without a date ordering clause, so it does
 not require a new composite index. Clearing the plate restores the paginated history.
 
-New inspections use `schemaVersion: 4` and require a registered contact and vehicle.
+New inspections use `schemaVersion: 5` and require a registered contact and vehicle.
 `carId` stores the `cars` document ID. `contactId` stores the
 `contacts` document ID, `clientUid` stores its authoritative `uid` (falling back to the document ID),
 and `clientSignatureName` stores the independent name of the signer. Only version 4 is supported;
@@ -73,23 +73,21 @@ in the full report, not in list summaries. This does not change shared Firebase 
 
 ### Static location map
 
-The final step, report, and print layout show coordinates, approximate accuracy and capture
-time. With `PUBLIC_GOOGLE_MAPS_STATIC_API_KEY`, they also display a Google Maps Static API
-image with a fixed marker. This public, optional build-time key is separate from Firebase keys:
+Set the optional private runtime variable `GEOAPIFY_API_KEY` to enable
+[Geoapify Static Maps](https://apidocs.geoapify.com/docs/maps/static/). The server requests
+a single PNG with a marker from the saved coordinates. It stores the image in Firebase
+Storage and writes its path to `location.mapImagePath` after the upload succeeds.
+The report serves it through the authenticated checklist API and includes the required
+Geoapify and OpenStreetMap attribution in print. The final step shows the capture status
+and time only.
 
-1. Enable Maps Static API and billing in the intended Google Cloud project.
-2. Create a dedicated API key restricted to **Maps Static API** and HTTP referrers for the
-   authorized app domains. Use a separate restricted key for localhost development if needed.
-3. Set `PUBLIC_GOOGLE_MAPS_STATIC_API_KEY` in the build environment and rebuild/redeploy.
-4. Set appropriate API quotas and check a map load on the authorized domain.
+A checklist can finish offline and print with its coordinates. Synchronization attempts to
+save the map, and the synced report offers a retry if it is unavailable. Map errors do not
+prevent synchronization. Check the [free plan's credit limits](https://www.geoapify.com/pricing/)
+for the expected volume of inspections.
 
-See [Google's setup guide](https://developers.google.com/maps/documentation/maps-static/get-api-key).
-Do not commit key values. The app loads map images directly from Google and preserves their
-attribution; the image is not stored in Firebase, IndexedDB, or the app's service-worker cache.
-Coordinates are sent to Google when loading the map. No reverse geocoding or background
-tracking is performed. A missing key, offline connection or image failure falls back to the
-recorded coordinates and never blocks completion after successful geolocation. Printing always
-includes textual location data and includes the map when loaded.
+Named items are keyed by ID inside the `partStates.interior`, `partStates.windows`,
+and `partStates.headlights` maps. Other parts retain their existing keys.
 
 Geolocation requires HTTPS (localhost is supported for development), a compatible browser,
 and device/browser permission. Before this release is used, the operator must delete all old

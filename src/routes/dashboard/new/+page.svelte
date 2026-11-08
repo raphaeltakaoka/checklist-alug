@@ -19,6 +19,9 @@
   import { mediaPreviewUrl, revokeMediaPreview } from "$lib/mediaPreview.js";
   import {
     PART_NAMES,
+    CHECKLIST_SCHEMA_VERSION,
+    partStateEntries,
+    setPartState,
     isItemCategory,
     partCategory,
     partEntries,
@@ -47,7 +50,7 @@
   import InspectionLocation from '$lib/components/InspectionLocation.svelte';
   import { createLocationCapture } from '$lib/inspectionLocation.js';
   let report = $state({
-    schemaVersion: 4,
+    schemaVersion: CHECKLIST_SCHEMA_VERSION,
     location: null,
     id: "ins-" + crypto.randomUUID(),
     ownerUid: "",
@@ -118,7 +121,7 @@
 
   let eligible = $derived(draftStarted || !!(report.licensePlate || report.clientName || report.contactId));
   let photoCount = $derived(
-    Object.values(report.partStates).reduce((sum, part) => sum + (part.photos?.length || 0), 0),
+    partStateEntries(report.partStates).reduce((sum, [, part]) => sum + (part.photos?.length || 0), 0),
   );
   let mileageDiff = $derived(
     report.deliverySnapshot?.mileage
@@ -252,10 +255,10 @@
     }
 
     // Copy delivery part damages as pre-existing
-    const preExistingParts = {};
-    for (const [partId, state] of Object.entries(delivery.partStates || {})) {
+    const preExistingParts = { ...report.partStates };
+    for (const [partId, state] of partStateEntries(delivery.partStates)) {
       if (state?.status && (state.status !== "none" || isItemCategory(partCategory(partId)))) {
-        preExistingParts[partId] = {
+        setPartState(preExistingParts, partId, {
           ...(state.name ? { name: state.name } : {}),
           status: state.status,
           comments: state.comments || "",
@@ -265,10 +268,10 @@
           deliveryStatus: state.status,
           deliveryComments: state.comments || "",
           deliveryPhotos: Array.isArray(state.photos) ? [...state.photos] : [],
-        };
+        });
       }
     }
-    report.partStates = { ...report.partStates, ...preExistingParts };
+    report.partStates = preExistingParts;
     linkedDeliveryPlate = normalizePlate(delivery.licensePlate || report.licensePlate);
     deliveryPickerOpen = false;
     deliverySearchError = "";
@@ -284,14 +287,14 @@
     report.deliverySnapshot = null;
     linkedDeliveryPlate = "";
     const remainingParts = {};
-    for (const [partId, state] of Object.entries(report.partStates || {})) {
+    for (const [partId, state] of partStateEntries(report.partStates)) {
       if (state?.isNewDamage) {
-        remainingParts[partId] = {
+        setPartState(remainingParts, partId, {
           ...state,
           deliveryStatus: "",
           deliveryComments: "",
           deliveryPhotos: [],
-        };
+        });
       }
     }
     report.partStates = remainingParts;
@@ -533,7 +536,7 @@
             await goto(`/dashboard/new/${encodeURIComponent(draftId)}`);
             return;
           }
-          if (draft.schemaVersion !== 4) {
+          if (draft.schemaVersion !== CHECKLIST_SCHEMA_VERSION) {
             loadError = 'Este rascunho usa uma versão não suportada. Inicie uma nova vistoria.';
             return;
           }
@@ -926,7 +929,7 @@
                     ><span>{name}</span>
                     <div class="inline" style="gap:6px">
                       {#if isItemCategory(partId)}
-                        <span class="badge">{partEntries(report.partStates, partId).length} itens · {countDamages(Object.fromEntries(partEntries(report.partStates, partId)))} danos</span>
+                        <span class="badge">{partEntries(report.partStates, partId).length} itens · {countDamages({ [partId]: report.partStates[partId] })} danos</span>
                       {:else}
                       {#if report.partStates[partId]?.isNewDamage}
                         <span class="badge danger">Novo</span>

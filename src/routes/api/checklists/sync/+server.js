@@ -17,6 +17,7 @@ import { readJson } from "$lib/server/requestValidation";
 import { contactSelection } from '$lib/server/contacts';
 import { carSelection } from '$lib/server/cars';
 import { sameLocation } from '$lib/inspectionLocation.js';
+import { ensureChecklistLocationMap } from '$lib/server/checklistLocationMap.js';
 
 export async function POST({ request }) {
   try {
@@ -56,6 +57,9 @@ export async function POST({ request }) {
       if (existing.exists && !sameLocation(existing.data().location, report.location)) {
         throw new ApiError(400, 'A localização de uma vistoria sincronizada não pode ser alterada.');
       }
+      if (existing.exists && existing.data().location.mapImagePath) {
+        report.location.mapImagePath = existing.data().location.mapImagePath;
+      }
       const contact = contactSelection(await transaction.get(adminDb.collection('contacts').doc(report.contactId)));
       report.clientUid = contact.uid;
       const car = carSelection(await transaction.get(adminDb.collection('cars').doc(report.carId)));
@@ -78,6 +82,16 @@ export async function POST({ request }) {
     await Promise.allSettled(
       stalePaths.map(path => adminStorage.bucket().file(path).delete({ ignoreNotFound: true })),
     );
+
+    // The location is already saved. Provider or Storage failures leave the PDF usable.
+    try {
+      if (!report.location.mapImagePath) {
+        const path = await ensureChecklistLocationMap(detailRef, report);
+        if (path) report.location.mapImagePath = path;
+      }
+    } catch {
+      console.warn('Checklist location map unavailable.');
+    }
 
     return json(
       {

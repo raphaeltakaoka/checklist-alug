@@ -1,3 +1,5 @@
+export const CHECKLIST_SCHEMA_VERSION = 5;
+
 export const PART_NAMES = Object.freeze({
   front_bumper: "Parachoque Dianteiro",
   hood: "Capô",
@@ -13,7 +15,7 @@ export const PART_NAMES = Object.freeze({
   right_rear_door: "Porta Tras. Dir.",
   right_rear_quarter: "Lateral Tras. Dir.",
   interior: "Interior da Cabine",
-  glass: "Vidros",
+  windows: "Vidros",
   headlights: 'Faróis',
   left_front_wheel: "Roda Diant. Esq.",
   right_front_wheel: "Roda Diant. Dir.",
@@ -31,14 +33,14 @@ export const STATUS_LABELS = Object.freeze({
 });
 
 export function isItemCategory(category) {
-  return category === 'interior' || category === 'glass' || category === 'headlights';
+  return category === 'interior' || category === 'windows' || category === 'headlights';
 }
 
 // Item keys stay stable across edits and delivery/return inspections.
 export function partCategory(partId) {
   if (typeof partId !== 'string') return null;
   if (Object.hasOwn(PART_NAMES, partId)) return partId;
-  return /^(interior|glass|headlights)_[A-Za-z0-9-]{1,64}$/.exec(partId)?.[1] || null;
+  return /^(interior|windows|headlights)_[A-Za-z0-9-]{1,64}$/.exec(partId)?.[1] || null;
 }
 
 export function isValidPartKey(partId) {
@@ -47,7 +49,37 @@ export function isValidPartKey(partId) {
 }
 
 export function partEntries(partStates, category) {
-  return Object.entries(partStates || {}).filter(([key]) => partCategory(key) === category);
+  if (!isItemCategory(category)) {
+    return partStates && Object.hasOwn(partStates, category) ? [[category, partStates[category]]] : [];
+  }
+  return Object.entries(partStates?.[category] || {}).map(([id, state]) => [`${category}_${id}`, state]);
+}
+
+export function partStateEntries(partStates) {
+  return Object.keys(partStates || {}).flatMap(category => partEntries(partStates, category));
+}
+
+export function getPartState(partStates, partId) {
+  const category = partCategory(partId);
+  if (category && category !== partId) return partStates?.[category]?.[partId.slice(category.length + 1)];
+  return partStates?.[partId];
+}
+
+// Mutate the supplied map so callers can build a new map or update a single item.
+export function setPartState(partStates, partId, state) {
+  const category = partCategory(partId);
+  if (category && category !== partId) {
+    const id = partId.slice(category.length + 1);
+    const group = { ...partStates[category] };
+    if (state == null) delete group[id];
+    else group[id] = state;
+    if (Object.keys(group).length) partStates[category] = group;
+    else delete partStates[category];
+  } else if (state == null) {
+    delete partStates[partId];
+  } else {
+    partStates[partId] = state;
+  }
 }
 
 export function partName(partId, state = {}) {
@@ -69,20 +101,20 @@ export const STATUS_BADGE_STYLES = Object.freeze({
 });
 
 export function countDamages(partStates = {}) {
-  return Object.values(partStates).filter(state => state?.status && state.status !== "none").length;
+  return partStateEntries(partStates).filter(([, state]) => state?.status && state.status !== "none").length;
 }
 
 export function countNewDamages(partStates = {}) {
-  return Object.values(partStates).filter(
-    state => state?.status && state.status !== "none" && state.isNewDamage,
+  return partStateEntries(partStates).filter(
+    ([, state]) => state?.status && state.status !== "none" && state.isNewDamage,
   ).length;
 }
 
 export function detectNewDamages(returnPartStates = {}, deliveryPartStates = {}) {
   const newDamages = [];
-  for (const [partId, state] of Object.entries(returnPartStates)) {
+  for (const [partId, state] of partStateEntries(returnPartStates)) {
     if (!state || !state.status || state.status === "none") continue;
-    const deliveryState = deliveryPartStates[partId];
+    const deliveryState = getPartState(deliveryPartStates, partId);
     const hadDeliveryDamage = Boolean(deliveryState?.status && deliveryState.status !== "none");
 
     if (state.isNewDamage || !hadDeliveryDamage) {

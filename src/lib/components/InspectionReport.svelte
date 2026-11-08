@@ -2,6 +2,8 @@
   import { mediaPreviewUrl } from "$lib/mediaPreview.js";
   import {
     partName,
+    partStateEntries,
+    getPartState,
     isItemCategory,
     partCategory,
     STATUS_LABELS,
@@ -27,7 +29,7 @@
   let busy = $state(false);
   let error = $state("");
   let parts = $derived(
-    Object.entries(inspection.partStates || {}).filter(
+    partStateEntries(inspection.partStates).filter(
       ([key, part]) => isItemCategory(partCategory(key)) || part.status !== "none" || part.photos?.length || part.comments,
     ),
   );
@@ -134,7 +136,7 @@
     </div>
   </dl>
   <section class="report-section">
-    <InspectionLocation location={inspection.location} />
+    <InspectionLocation location={inspection.location} inspectionId={inspection.synced ? inspection.id : null} />
   </section>
   {#if inspection.inspectionType === "Devolução" && inspection.deliverySnapshot}
     <section class="report-section">
@@ -338,13 +340,13 @@
   </section>
 </article>
 {#if preview}<Dialog
-    title={preview.part ? partName(preview.part, inspection.partStates[preview.part]) : "Documento do cliente"}
+    title={preview.part ? partName(preview.part, getPartState(inspection.partStates, preview.part)) : "Documento do cliente"}
     wide
     onclose={() => (preview = null)}
     ><img
       class="preview-image"
       src={mediaPreviewUrl(preview.value)}
-      alt={preview.part ? `Foto de ${partName(preview.part, inspection.partStates[preview.part])}` : "CNH do cliente"}
+      alt={preview.part ? `Foto de ${partName(preview.part, getPartState(inspection.partStates, preview.part))}` : "CNH do cliente"}
     />{#snippet footer()}{#if preview.part && ondeletephoto}<button
           class="btn"
           onclick={() => {

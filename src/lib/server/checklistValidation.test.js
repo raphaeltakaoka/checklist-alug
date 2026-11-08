@@ -3,7 +3,7 @@ import { validateChecklistPayload } from "./checklistValidation.js";
 
 function validPayload(overrides = {}) {
   return {
-    schemaVersion: 4,
+    schemaVersion: 5,
     location: { latitude: -23.55052, longitude: -46.633308, accuracy: 12, capturedAt: '2026-11-06T12:00:00.000Z' },
     id: "ins-valid",
     ownerUid: "owner-a",
@@ -42,14 +42,14 @@ function validPayload(overrides = {}) {
 
 describe("checklist server validation", () => {
   it.each([undefined, null, '', '   ', 'x'.repeat(101)])('requires a bounded name for each item: %j', name => {
-    for (const category of ['glass', 'interior', 'headlights']) {
+    for (const category of ['windows', 'interior', 'headlights']) {
       expect(() => validateChecklistPayload(validPayload({ partStates: {
-        [`${category}_first`]: { name, status: 'none', comments: '', photos: [], photoPaths: [] },
+        [category]: { first: { name, status: 'none', comments: '', photos: [], photoPaths: [] } },
       } }), 'owner-a')).toThrow();
     }
   });
 
-  it.each(['glass', 'interior', 'headlights', 'glass_../bad', 'interior_a.b', 'headlights_../bad', 'unknown_item'])('rejects invalid item keys %s', key => {
+  it.each(['glass', 'windows_front', 'interior_seat', 'headlights_left', 'unknown_item'])('rejects invalid item keys %s', key => {
     expect(() => validateChecklistPayload(validPayload({ partStates: {
       [key]: { name: 'Item', status: 'none', comments: '', photos: [], photoPaths: [] },
     } }), 'owner-a')).toThrow('Invalid inspection part.');
@@ -58,19 +58,25 @@ describe("checklist server validation", () => {
   it('preserves independent named items, including healthy items and multiple photos per item', () => {
     const state = { status: 'crack', comments: 'Observação', photos: [], photoPaths: [] };
     const partStates = {
-      glass_front: { ...state, name: ' Parabrisa ' },
-      glass_left: { ...state, name: 'Vidro esquerdo', status: 'scratch' },
-      interior_seat: { ...state, name: 'Banco', status: 'damaged' },
-      interior_panel: { ...state, name: 'Painel', status: 'none' },
-      headlights_left: { ...state, name: 'Farol esquerdo', status: 'broken' },
-      headlights_right: { ...state, name: 'Farol direito', status: 'none' },
+      windows: {
+        front: { ...state, name: ' Parabrisa ' },
+        left: { ...state, name: 'Vidro esquerdo', status: 'scratch' },
+      },
+      interior: {
+        seat: { ...state, name: 'Banco', status: 'damaged' },
+        panel: { ...state, name: 'Painel', status: 'none' },
+      },
+      headlights: {
+        left: { ...state, name: 'Farol esquerdo', status: 'broken' },
+        right: { ...state, name: 'Farol direito', status: 'none' },
+      },
     };
     const report = validateChecklistPayload(validPayload({ partStates }), 'owner-a');
-    expect(Object.keys(report.partStates)).toHaveLength(6);
-    expect(report.partStates.glass_front.name).toBe('Parabrisa');
-    expect(report.partStates.interior_panel.status).toBe('none');
-    expect(report.partStates.headlights_left.name).toBe('Farol esquerdo');
-    expect(report.partStates.headlights_right.status).toBe('none');
+    expect(Object.keys(report.partStates)).toEqual(['windows', 'interior', 'headlights']);
+    expect(report.partStates.windows.front.name).toBe('Parabrisa');
+    expect(report.partStates.interior.panel.status).toBe('none');
+    expect(report.partStates.headlights.left.name).toBe('Farol esquerdo');
+    expect(report.partStates.headlights.right.status).toBe('none');
   });
 
   function glassState(count = 1) {
@@ -79,15 +85,15 @@ describe("checklist server validation", () => {
       status: 'crack',
       comments: 'Trinca no parabrisa e risco no vidro lateral.',
       photos: Array.from({ length: count }, (_, index) => `https://storage.example/glass-${index}.jpg`),
-      photoPaths: Array.from({ length: count }, (_, index) => `checklists/owner-a/ins-valid/parts/glass_front/${index}.jpg`),
+      photoPaths: Array.from({ length: count }, (_, index) => `checklists/owner-a/ins-valid/parts/windows_front/${index}.jpg`),
     };
   }
 
   it.each(['none', 'scratch', 'dent', 'crack', 'broken', 'damaged'])('accepts a named glass item with status %s', status => {
     const glass = { ...glassState(), status };
-    const report = validateChecklistPayload(validPayload({ partStates: { glass_front: glass } }), 'owner-a');
-    expect(report.partStates).toMatchObject({ glass_front: glass });
-    expect(Object.keys(report.partStates)).toEqual(['glass_front']);
+    const report = validateChecklistPayload(validPayload({ partStates: { windows: { front: glass } } }), 'owner-a');
+    expect(report.partStates).toMatchObject({ windows: { front: glass } });
+    expect(Object.keys(report.partStates)).toEqual(['windows']);
   });
 
   it.each(['windshield', 'rear_glass', 'left_front_window', 'left_rear_window', 'right_front_window', 'right_rear_window'])('rejects removed glass identifier %s', partId => {
@@ -95,16 +101,16 @@ describe("checklist server validation", () => {
       .toThrow('Invalid inspection part.');
   });
 
-  it('preserves glass in a linked delivery snapshot and drops removed identifiers', () => {
+  it('preserves window names in a linked delivery snapshot', () => {
     const glass = glassState();
     const report = validateChecklistPayload(validPayload({
       inspectionType: 'Devolução',
       deliveryChecklistId: 'delivery',
-      deliverySnapshot: { id: 'delivery', partStates: { glass_front: glass, windshield: glass, rear_glass: glass, left_front_window: glass, left_rear_window: glass, right_front_window: glass, right_rear_window: glass } },
-      partStates: { glass_front: { ...glass, isNewDamage: false, deliveryStatus: 'crack' } },
+      deliverySnapshot: { id: 'delivery', partStates: { windows: { front: glass } } },
+      partStates: { windows: { front: { ...glass, isNewDamage: false, deliveryStatus: 'crack' } } },
     }), 'owner-a');
-    expect(report.deliverySnapshot.partStates).toEqual({ glass_front: { name: glass.name, status: glass.status, comments: glass.comments, photos: glass.photos } });
-    expect(report.partStates.glass_front).toMatchObject({ isNewDamage: false, deliveryStatus: 'crack' });
+    expect(report.deliverySnapshot.partStates).toEqual({ windows: { front: { name: glass.name, status: glass.status, comments: glass.comments, photos: glass.photos } } });
+    expect(report.partStates.windows.front).toMatchObject({ isNewDamage: false, deliveryStatus: 'crack' });
   });
 
   it('limits glass to six photos and the complete inspection to 24 photos', () => {
@@ -112,16 +118,15 @@ describe("checklist server validation", () => {
     const stateFor = (partId, count) => {
       const state = glassState(count);
       const { name, ...rest } = state;
-      return { ...rest, photoPaths: state.photoPaths.map(path => path.replace('/glass_front/', `/${partId}/`)) };
+      return { ...rest, photoPaths: state.photoPaths.map(path => path.replace('/windows_front/', `/${partId}/`)) };
     };
     const partStates = {
-      glass_front: glass,
-      glass_left: { ...stateFor('glass_left', 6), name: 'Vidro esquerdo' },
+      windows: { front: glass, left: { ...stateFor('windows_left', 6), name: 'Vidro esquerdo' } },
       hood: stateFor('hood', 6),
-      headlights_left: { ...stateFor('headlights_left', 6), name: 'Farol esquerdo' },
+      headlights: { left: { ...stateFor('headlights_left', 6), name: 'Farol esquerdo' } },
     };
-    expect(validateChecklistPayload(validPayload({ partStates }), 'owner-a').partStates.glass_front.photos).toHaveLength(6);
-    expect(() => validateChecklistPayload(validPayload({ partStates: { glass_front: glassState(7) } }), 'owner-a'))
+    expect(validateChecklistPayload(validPayload({ partStates }), 'owner-a').partStates.windows.front.photos).toHaveLength(6);
+    expect(() => validateChecklistPayload(validPayload({ partStates: { windows: { front: glassState(7) } } }), 'owner-a'))
       .toThrow('Invalid damage photo count.');
     expect(() => validateChecklistPayload(validPayload({ partStates: { ...partStates, trunk: stateFor('trunk', 1) } }), 'owner-a'))
       .toThrow('Inspection contains too many photos.');
@@ -134,16 +139,16 @@ describe("checklist server validation", () => {
     const payload = validPayload();
     expect(validateChecklistPayload(payload, 'owner-a').location).toEqual(payload.location);
   });
-  it('requires a contact and signer in version 4, leaving the UID for authoritative resolution', () => {
-    const payload = validPayload({ schemaVersion: 4, contactId: 'contact-id', clientUid: 'forged', clientSignatureName: ' Representante ' });
+  it('requires a contact and signer in version 5, leaving the UID for authoritative resolution', () => {
+    const payload = validPayload({ schemaVersion: 5, contactId: 'contact-id', clientUid: 'forged', clientSignatureName: ' Representante ' });
     const report = validateChecklistPayload(payload, 'owner-a');
-    expect(report).toMatchObject({ schemaVersion: 4, contactId: 'contact-id', clientUid: null, clientSignatureName: 'Representante' });
+    expect(report).toMatchObject({ schemaVersion: 5, contactId: 'contact-id', clientUid: null, clientSignatureName: 'Representante' });
     for (const override of [{ carId: null }, { carId: '../unsafe' }, { contactId: null }, { contactId: '../unsafe' }, { clientSignatureName: '   ' }, { clientSignatureName: 'A'.repeat(201) }]) {
       expect(() => validateChecklistPayload({ ...payload, ...override }, 'owner-a')).toThrow();
     }
   });
 
-  it.each([undefined, 1, 2, 3, 5])('rejects unsupported schema version %s', schemaVersion => {
+  it.each([undefined, 1, 2, 3, 4, 6])('rejects unsupported schema version %s', schemaVersion => {
     expect(() => validateChecklistPayload(validPayload({ schemaVersion }), 'owner-a')).toThrow('Unsupported inspection schema version.');
   });
   it("accepts and normalizes a bounded owner-scoped report", () => {

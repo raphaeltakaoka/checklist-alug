@@ -1,5 +1,5 @@
 import { ApiError } from "$lib/server/errors";
-import { countDamages, isValidPartKey, isItemCategory, partCategory } from '$lib/inspection.js';
+import { CHECKLIST_SCHEMA_VERSION, countDamages, isItemCategory, partCategory, partStateEntries, setPartState } from '$lib/inspection.js';
 import { validateContactId } from '$lib/server/contacts';
 import { validateCarId } from '$lib/server/cars';
 import { isValidLocation } from '$lib/inspectionLocation.js';
@@ -81,12 +81,23 @@ const ALLOWED_PART_FIELDS = new Set([
   "deliveryPhotos",
 ]);
 
-function cleanPartStates(value, prefix) {
+function validatedPartEntries(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) fail("Invalid partStates.");
+  for (const [category, state] of Object.entries(value)) {
+    if (partCategory(category) !== category) fail("Invalid inspection part.");
+    if (isItemCategory(category)) {
+      if (!state || typeof state !== "object" || Array.isArray(state)) fail("Invalid inspection item group.");
+      if (Object.keys(state).some(id => !/^[A-Za-z0-9-]{1,64}$/.test(id))) fail("Invalid inspection item ID.");
+    }
+  }
+  return partStateEntries(value);
+}
+
+function cleanPartStates(value, prefix) {
   const result = {};
   let totalPhotos = 0;
-  for (const [partId, state] of Object.entries(value)) {
-    if (!isValidPartKey(partId) || !state || typeof state !== "object" || Array.isArray(state)) {
+  for (const [partId, state] of validatedPartEntries(value)) {
+    if (!state || typeof state !== "object" || Array.isArray(state)) {
       fail("Invalid inspection part.");
     }
     if (Object.keys(state).some(key => !ALLOWED_PART_FIELDS.has(key))) {
@@ -121,7 +132,7 @@ function cleanPartStates(value, prefix) {
           .filter(Boolean)
       : [];
 
-    result[partId] = {
+    setPartState(result, partId, {
       ...(name !== null ? { name } : {}),
       status: state.status,
       comments,
@@ -133,7 +144,7 @@ function cleanPartStates(value, prefix) {
       deliveryStatus,
       deliveryComments,
       deliveryPhotos,
-    };
+    });
   }
   return result;
 }
@@ -141,18 +152,18 @@ function cleanPartStates(value, prefix) {
 function sanitizePartStatesForSnapshot(partStates) {
   if (!partStates || typeof partStates !== "object" || Array.isArray(partStates)) return {};
   const clean = {};
-  for (const [partId, state] of Object.entries(partStates)) {
-    if (!isValidPartKey(partId) || !state || typeof state !== "object") continue;
+  for (const [partId, state] of validatedPartEntries(partStates)) {
+    if (!state || typeof state !== "object" || Array.isArray(state)) fail("Invalid delivery item.");
     const named = isItemCategory(partCategory(partId));
     if (named && (typeof state.name !== 'string' || !state.name.trim() || state.name.length > 100)) fail('Invalid delivery item name.');
-    clean[partId] = {
+    setPartState(clean, partId, {
       ...(named ? { name: state.name.trim() } : {}),
       status: STATUSES.has(state.status) ? state.status : "none",
       comments: String(state.comments || "").slice(0, 1000),
       photos: Array.isArray(state.photos)
         ? state.photos.filter(p => typeof p === "string").slice(0, 6)
         : [],
-    };
+    });
   }
   return clean;
 }
@@ -185,8 +196,8 @@ export function validateChecklistPayload(payload, ownerUid) {
     fail("Invalid inspection.");
   if (Object.keys(payload).some(key => !ALLOWED_FIELDS.has(key)))
     fail("Unexpected inspection field.");
-  if (payload.schemaVersion !== 4) fail('Unsupported inspection schema version.');
-  if (!isValidLocation(payload.location)) fail('Localização inválida. Obtenha a localização atual antes de concluir.');
+  if (payload.schemaVersion !== CHECKLIST_SCHEMA_VERSION) fail('Unsupported inspection schema version.');
+  if (!isValidLocation(payload.location) || Object.hasOwn(payload.location, "mapImagePath")) fail('Localização inválida. Obtenha a localização atual antes de concluir.');
   if (payload.ownerUid !== ownerUid)
     fail("Invalid inspection owner.");
   const id = string(payload.id, "inspection ID", 128);
@@ -286,8 +297,9 @@ export function collectChecklistStoragePaths(report = {}) {
     report.clientLicensePhotoPath,
     report.clientSignaturePath,
     report.carDiagramImagePath,
+    report.location?.mapImagePath,
   ];
-  for (const state of Object.values(report.partStates || {})) {
+  for (const [, state] of partStateEntries(report.partStates)) {
     if (Array.isArray(state?.photoPaths)) paths.push(...state.photoPaths);
   }
   return paths.filter(path => typeof path === "string" && path.length > 0);

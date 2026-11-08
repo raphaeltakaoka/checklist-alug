@@ -1,16 +1,16 @@
 import { initializeGuardedAdmin, parseArgs } from './firebase-admin-cli.js';
 
 const COLLECTIONS = ['checklists', 'checklist_summaries', 'checklist_rate_limits'];
-const STORAGE_PREFIX = 'checklists/';
+const STORAGE_PREFIXES = ['checklists/', 'checklist-location-maps/'];
 
-async function countStorageObjects(bucket) {
+async function countStorageObjects(bucket, prefix) {
 	let pageToken;
 	let count = 0;
 	do {
 		const [files, , response] = await bucket.getFiles({
 			autoPaginate: false,
 			pageToken,
-			prefix: STORAGE_PREFIX
+			prefix
 		});
 		count += files.length;
 		pageToken = response?.nextPageToken;
@@ -26,7 +26,8 @@ for (const collectionName of COLLECTIONS) {
 	const snapshot = await db.collection(collectionName).count().get();
 	counts[collectionName] = snapshot.data().count;
 }
-counts.storageObjects = await countStorageObjects(bucket);
+counts.storageObjects = 0;
+for (const prefix of STORAGE_PREFIXES) counts.storageObjects += await countStorageObjects(bucket, prefix);
 
 console.log(
 	JSON.stringify(
@@ -34,7 +35,7 @@ console.log(
 			mode: args.execute ? 'execute' : 'dry-run',
 			projectId: 'cadastro-alug---dev',
 			collections: COLLECTIONS,
-			storagePrefix: STORAGE_PREFIX,
+			storagePrefixes: STORAGE_PREFIXES,
 			counts,
 			preserved: ['Authentication accounts', 'all other Firestore collections', 'all other Storage prefixes']
 		},
@@ -51,6 +52,6 @@ if (!args.execute) {
 for (const collectionName of COLLECTIONS) {
 	await db.recursiveDelete(db.collection(collectionName));
 }
-await bucket.deleteFiles({ force: true, prefix: STORAGE_PREFIX });
+for (const prefix of STORAGE_PREFIXES) await bucket.deleteFiles({ force: true, prefix });
 
 console.log('Checklist-only reset completed. The operation is idempotent; re-run dry mode to verify zero counts.');

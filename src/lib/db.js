@@ -1,3 +1,4 @@
+import { partStateEntries } from '$lib/inspection.js';
 const DB_NAME = "inspectionDB";
 const DB_VERSION = 2;
 const INSPECTION_STORE = "inspections";
@@ -133,7 +134,7 @@ async function extractMedia(report) {
   for (const field of ["clientLicensePhoto", "clientSignature", "carDiagramImage"]) {
     storedReport[field] = await storeValue(field, storedReport[field]);
   }
-  for (const [partKey, state] of Object.entries(storedReport.partStates || {})) {
+  for (const [partKey, state] of partStateEntries(storedReport.partStates)) {
     if (!Array.isArray(state?.photos)) continue;
     state.photos = await Promise.all(
       state.photos.map((photo, index) => storeValue(`parts/${partKey}/${index}`, photo)),
@@ -165,7 +166,7 @@ async function hydrateMedia(database, report) {
   for (const field of ["clientLicensePhoto", "clientSignature", "carDiagramImage"]) {
     hydrated[field] = await resolveValue(hydrated[field]);
   }
-  for (const state of Object.values(hydrated.partStates || {})) {
+  for (const [, state] of partStateEntries(hydrated.partStates)) {
     if (Array.isArray(state?.photos)) {
       state.photos = await Promise.all(state.photos.map(resolveValue));
     }

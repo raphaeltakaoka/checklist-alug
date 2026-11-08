@@ -2,12 +2,12 @@
   import { onDestroy } from "svelte";
   import { compressImage } from "$lib/utils/imageCompressor.js";
   import { mediaPreviewUrl, revokeMediaPreview } from "$lib/mediaPreview.js";
-  import { STATUS_LABELS, isItemCategory, partCategory } from '$lib/inspection.js';
+  import { STATUS_LABELS, isItemCategory, partCategory, partStateEntries, getPartState, setPartState } from '$lib/inspection.js';
   import Icon from "./Icon.svelte";
   import Notice from "./Notice.svelte";
   import Dialog from "./Dialog.svelte";
   let { partId = $bindable(), partStates = $bindable(), partName = "" } = $props();
-  let initial = partStates[partId] || {
+  let initial = getPartState(partStates, partId) || {
     status: "none",
     comments: "",
     photos: [],
@@ -36,7 +36,7 @@
   let gallery = $state(null);
   let alive = true;
   let otherCount = $derived(
-    Object.entries(partStates).reduce(
+    partStateEntries(partStates).reduce(
       (sum, [key, part]) => sum + (key === partId ? 0 : part.photos?.length || 0),
       0,
     ),
@@ -59,9 +59,8 @@
       return;
     }
     const finalStatus = hasDeliveryDamage && !isNewDamage ? deliveryStatus : status;
-    partStates = {
-      ...partStates,
-      [partId]: {
+    const next = { ...partStates };
+    setPartState(next, partId, {
         ...(namedItem ? { name: name.trim() } : {}),
         status: finalStatus,
         comments,
@@ -70,8 +69,8 @@
         deliveryStatus,
         deliveryComments,
         deliveryPhotos,
-      },
-    };
+    });
+    partStates = next;
     partId = null;
   }
   async function upload(event) {

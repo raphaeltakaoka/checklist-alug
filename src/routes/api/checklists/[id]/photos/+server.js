@@ -8,7 +8,7 @@ import {
 	requireAuth
 } from '$lib/server/auth';
 import { readExactJson } from '$lib/server/requestValidation';
-import { isValidPartKey } from '$lib/inspection.js';
+import { getPartState, isValidPartKey, setPartState } from '$lib/inspection.js';
 
 export async function DELETE({ request, params }) {
 	try {
@@ -38,7 +38,7 @@ export async function DELETE({ request, params }) {
 				throw new ApiError(400, 'Invalid stored photo path.');
 			}
 
-			const state = inspection.partStates?.[partKey];
+			const state = getPartState(inspection.partStates, partKey);
 			const photoIndex = Array.isArray(state?.photoPaths)
 				? state.photoPaths.indexOf(photoPath)
 				: -1;
@@ -48,10 +48,8 @@ export async function DELETE({ request, params }) {
 			}
 			const photos = state.photos.filter((_, index) => index !== photoIndex);
 			const photoPaths = state.photoPaths.filter((_, index) => index !== photoIndex);
-			partStates = {
-				...inspection.partStates,
-				[partKey]: { ...state, photos, photoPaths }
-			};
+			partStates = { ...inspection.partStates };
+			setPartState(partStates, partKey, { ...state, photos, photoPaths });
 
 			transaction.update(detailRef, {
 				partStates,

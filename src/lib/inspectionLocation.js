@@ -2,7 +2,8 @@ const LOCATION_FIELDS = ['latitude', 'longitude', 'accuracy', 'capturedAt'];
 
 export function isValidLocation(location) {
 	if (!location || typeof location !== 'object' || Array.isArray(location)) return false;
-	if (Object.keys(location).some(key => !LOCATION_FIELDS.includes(key))) return false;
+	if (Object.keys(location).some(key => key !== 'mapImagePath' && !LOCATION_FIELDS.includes(key))) return false;
+	if (Object.hasOwn(location, 'mapImagePath') && typeof location.mapImagePath !== 'string') return false;
 	const { latitude, longitude, accuracy, capturedAt } = location;
 	return Number.isFinite(latitude) && latitude >= -90 && latitude <= 90 &&
 		Number.isFinite(longitude) && longitude >= -180 && longitude <= 180 &&
@@ -19,15 +20,6 @@ export function sameLocation(left, right) {
 export function googleMapsUrl(location) {
 	const params = new URLSearchParams({ api: '1', query: `${location.latitude},${location.longitude}` });
 	return `https://www.google.com/maps/search/?${params}`;
-}
-
-export function staticMapUrl(location, apiKey) {
-	if (!apiKey || !isValidLocation(location)) return '';
-	const point = `${location.latitude},${location.longitude}`;
-	const params = new URLSearchParams({
-		center: point, markers: point, zoom: '16', size: '640x320', scale: '2', key: apiKey
-	});
-	return `https://maps.googleapis.com/maps/api/staticmap?${params}`;
 }
 
 function captureError(error) {

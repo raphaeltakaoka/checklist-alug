@@ -1,5 +1,5 @@
 <script>
-  import { PART_NAMES, STATUS_LABELS, partEntries } from '$lib/inspection.js';
+  import { PART_NAMES, STATUS_LABELS, partEntries, getPartState, setPartState } from '$lib/inspection.js';
   import Dialog from './Dialog.svelte';
   import DamageModal from './DamageModal.svelte';
 
@@ -10,7 +10,7 @@
 
   function removeItem() {
     const next = { ...partStates };
-    delete next[deleting];
+    setPartState(next, deleting, null);
     partStates = next;
     deleting = null;
   }
@@ -44,12 +44,12 @@
 
 {#if editing}
   {#key editing}
-    <DamageModal bind:partId={editing} bind:partStates partName={partStates[editing]?.name || 'Adicionar item'} />
+    <DamageModal bind:partId={editing} bind:partStates partName={getPartState(partStates, editing)?.name || 'Adicionar item'} />
   {/key}
 {/if}
 {#if deleting}
   <Dialog title="Excluir item?" onclose={() => (deleting = null)}>
-    <p>Excluir “{partStates[deleting].name}” e suas fotos desta vistoria?</p>
+    <p>Excluir “{getPartState(partStates, deleting).name}” e suas fotos desta vistoria?</p>
     {#snippet footer()}
       <button class="btn" onclick={() => (deleting = null)}>Cancelar</button>
       <button class="btn danger" onclick={removeItem}>Excluir item</button>

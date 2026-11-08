@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createLocationCapture, googleMapsUrl, isValidLocation, sameLocation, staticMapUrl } from './inspectionLocation.js';
+import { createLocationCapture, googleMapsUrl, isValidLocation, sameLocation } from './inspectionLocation.js';
 
 const location = { latitude: -23.55052, longitude: -46.633308, accuracy: 12, capturedAt: '2026-11-06T12:00:00.000Z' };
 const position = { coords: location, timestamp: Date.parse(location.capturedAt) };
@@ -22,12 +22,8 @@ describe('inspection location', () => {
 		expect(sameLocation(location, { capturedAt: location.capturedAt, accuracy: 12, longitude: location.longitude, latitude: location.latitude })).toBe(true);
 		expect(sameLocation(location, { ...location, accuracy: 13 })).toBe(false);
 	});
-	it('builds an encoded static map and external link without requiring a map key for coordinates', () => {
-		expect(staticMapUrl(location, '')).toBe('');
-		expect(staticMapUrl(null, 'key')).toBe('');
-		const url = new URL(staticMapUrl(location, 'restricted-key'));
-		expect(url.origin).toBe('https://maps.googleapis.com');
-		expect(Object.fromEntries(url.searchParams)).toEqual({ center: '-23.55052,-46.633308', markers: '-23.55052,-46.633308', zoom: '16', size: '640x320', scale: '2', key: 'restricted-key' });
+	it('keeps captured coordinates stable after attaching a map', () => {
+		expect(sameLocation(location, { ...location, mapImagePath: 'stored.png' })).toBe(true);
 		expect(new URL(googleMapsUrl(location)).searchParams.get('query')).toBe('-23.55052,-46.633308');
 	});
 });

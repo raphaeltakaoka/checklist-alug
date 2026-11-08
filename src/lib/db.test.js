@@ -38,30 +38,32 @@ async function readStore(name) {
 describe("owner-scoped inspection database", () => {
   it('keeps item photos separate across rename, deletion and offline reload', async () => {
     await saveInspection(report('owner-a', 'items', { partStates: {
-      glass_front: { name: 'Parabrisa', status: 'crack', photos: [new Blob(['front'], { type: 'image/jpeg' })] },
-      glass_left: { name: 'Lateral', status: 'scratch', photos: [new Blob(['left'], { type: 'image/jpeg' })] },
-      interior_seat: { name: 'Banco', status: 'none', photos: [] },
+      windows: {
+        front: { name: 'Parabrisa', status: 'crack', photos: [new Blob(['front'], { type: 'image/jpeg' })] },
+        left: { name: 'Lateral', status: 'scratch', photos: [new Blob(['left'], { type: 'image/jpeg' })] },
+      },
+      interior: { seat: { name: 'Banco', status: 'none', photos: [] } },
     } }));
     const restored = await getInspection('owner-a', 'items');
-    expect(restored.partStates.glass_front.photos[0]).not.toEqual(restored.partStates.glass_left.photos[0]);
-    restored.partStates.glass_left.name = 'Vidro lateral esquerdo';
-    delete restored.partStates.glass_front;
+    expect(restored.partStates.windows.front.photos[0]).not.toEqual(restored.partStates.windows.left.photos[0]);
+    restored.partStates.windows.left.name = 'Vidro lateral esquerdo';
+    delete restored.partStates.windows.front;
     await saveInspection(restored);
     const reloaded = await getInspection('owner-a', 'items');
-    expect(Object.keys(reloaded.partStates)).toEqual(['glass_left', 'interior_seat']);
-    expect(reloaded.partStates.glass_left).toEqual(restored.partStates.glass_left);
-    expect((await readStore('inspectionMedia')).map(record => record.key)).toEqual(['parts/glass_left/0']);
+    expect(Object.keys(reloaded.partStates)).toEqual(['windows', 'interior']);
+    expect(reloaded.partStates.windows.left).toEqual(restored.partStates.windows.left);
+    expect((await readStore('inspectionMedia')).map(record => record.key)).toEqual(['parts/windows_left/0']);
   });
   it('preserves a captured location through an offline completion and reload', async () => {
     const location = { latitude: -23.55052, longitude: -46.633308, accuracy: 12, capturedAt: '2026-11-06T12:00:00.000Z' };
-    const draft = report('owner-a', 'location-draft', { schemaVersion: 4, location: null });
+    const draft = report('owner-a', 'location-draft', { schemaVersion: 5, location: null });
     await saveInspection(draft);
     expect((await getInspection('owner-a', draft.id)).location).toBeNull();
     await saveInspection({ ...draft, location, status: 'completed', syncState: 'queued' });
     expect(await getInspection('owner-a', draft.id)).toMatchObject({ location, status: 'completed', syncState: 'queued' });
   });
   it('preserves vehicle, contact identity and an independent signer through an offline draft reload', async () => {
-    const fields = { schemaVersion: 4, carId: 'car-id', licensePlate: 'ABC1D23', contactId: 'doc-id', clientUid: 'historical-uid', clientName: 'Maria', clientSignatureName: 'Representante', signatureNameInitialized: true };
+    const fields = { schemaVersion: 5, carId: 'car-id', licensePlate: 'ABC1D23', contactId: 'doc-id', clientUid: 'historical-uid', clientName: 'Maria', clientSignatureName: 'Representante', signatureNameInitialized: true };
     await saveInspection(report('owner-a', 'contact-draft', fields));
     expect(await getInspection('owner-a', 'contact-draft')).toMatchObject(fields);
     await saveInspection(report('owner-a', 'contact-draft', { ...fields, contactId: null, clientUid: null, clientName: '' }));

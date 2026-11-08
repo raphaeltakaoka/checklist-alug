@@ -1,5 +1,5 @@
 <script>
-  import { PART_NAMES, countDamages, partEntries } from '$lib/inspection.js';
+  import { PART_NAMES, countDamages } from '$lib/inspection.js';
   // Svelte 5 Runes for properties
   let { activePart = $bindable(), partStates = {} } = $props();
   let svgElement;
@@ -344,8 +344,8 @@
   </div>
 
   <div class="flex flex-col gap-3 lg:min-w-48">
-    {#each [['interior', 'Interior da cabine'], ['glass', 'Vidros'], ['headlights', 'Faróis']] as [category, label] (category)}
-      {@const count = countDamages(Object.fromEntries(partEntries(partStates, category)))}
+    {#each [['interior', 'Interior da cabine'], ['windows', 'Vidros'], ['headlights', 'Faróis']] as [category, label] (category)}
+      {@const count = countDamages({ [category]: partStates[category] })}
       <button class="btn damage-category" type="button" data-category={category}
         aria-label={count ? `${label}, ${count} ${count === 1 ? 'item com dano' : 'itens com danos'}` : label}
         onclick={() => (activePart = category)}>

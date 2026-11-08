@@ -20,7 +20,7 @@ const imageFile = path.join(output, 'fixture-photo.png');
 await writeFile(imageFile, image);
 const ownerUid = 'ui-test-inspector';
 const fixtureReport = {
-	schemaVersion: 4,
+	schemaVersion: 5,
 	location: { latitude: -23.55052, longitude: -46.633308, accuracy: 12, capturedAt: '2026-11-06T12:00:00.000Z' },
 	id: 'ui-synced',
 	ownerUid,
@@ -47,18 +47,18 @@ const fixtureReport = {
 	status: 'completed',
 	damageCount: 3,
 	partStates: {
-		headlights_left: {
+		headlights: { left: {
 			name: 'Farol esquerdo', status: 'crack', comments: 'Trinca na lente.',
 			photos: ['https://ui-fixtures.invalid/headlight.png'],
 			photoPaths: [`checklists/${ownerUid}/ui-synced/parts/headlights_left/0.png`]
-		},
-		glass_front: {
+		} },
+		windows: { front: {
 			name: 'Parabrisa',
 			status: 'crack',
 			comments: 'Trinca no parabrisa.',
 			photos: ['https://ui-fixtures.invalid/glass.png'],
-			photoPaths: [`checklists/${ownerUid}/ui-synced/parts/glass_front/0.png`]
-		},
+			photoPaths: [`checklists/${ownerUid}/ui-synced/parts/windows_front/0.png`]
+		} },
 		hood: {
 			status: 'scratch',
 			comments: 'Risco superficial no capô.',
@@ -167,10 +167,6 @@ page.on('request', async (request) => {
 	if (url.pathname.includes('/src/lib/')) moduleRequests.push(url.pathname);
 	if (url.protocol === 'data:' || url.protocol === 'blob:')
 		return request.continue();
-	if (url.hostname === 'maps.googleapis.com') {
-		if (failMaps) return request.abort();
-		return request.respond({ status: 200, contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="320" viewBox="0 0 640 320"><rect width="640" height="320" fill="#eef1e8"/><path d="M0 80H640M0 220H640M140 0V320M480 0V320" stroke="white" stroke-width="24"/><path d="M300 0L340 320" stroke="#d3d9d1" stroke-width="20"/><circle cx="320" cy="160" r="13" fill="#b42c25"/><text x="12" y="300" font-size="14">Mapa simulado · dados de teste</text></svg>' });
-	}
 	if (url.hostname === 'ui-fixtures.invalid')
 		return request.respond({
 			status: 200,
@@ -179,7 +175,7 @@ page.on('request', async (request) => {
 		});
 	if (url.origin !== new URL(base).origin) return request.abort();
 	if (url.pathname.endsWith('/runtime/app/env/public/index.js'))
-		return js(request, `export const PUBLIC_FIREBASE_VAPID_KEY = ''; export const PUBLIC_GOOGLE_MAPS_STATIC_API_KEY = sessionStorage.getItem('ui-map-disabled') ? '' : 'ui-restricted-maps-key';`);
+		return js(request, `export const PUBLIC_FIREBASE_VAPID_KEY = '';`);
 	if (url.pathname === '/src/lib/auth.svelte.js')
 		return js(
 			request,
@@ -212,7 +208,7 @@ page.on('request', async (request) => {
 		export const query = (target, ...constraints) => ({ ...target, constraints });
 		export const where = (...args) => ({ where: args }); export const orderBy = (...args) => ({ orderBy: args }); export const limit = (n) => ({ limit: n }); export const startAfter = (cursor) => ({ cursor });
 		export const doc = (_, collection, id) => ({ collection, id });
-		export async function getDoc(ref) { return { exists: () => true, id: ref.id, data: () => ({ ...window.__fixtureReport, id: ref.id, ...(ref.id === 'ui-linked-delivery' ? { contactId: 'contact-test', clientUid: 'historical-test-uid' } : {}) }) }; }
+		export async function getDoc(ref) { return { exists: () => true, id: ref.id, data: () => ({ ...(JSON.parse(sessionStorage.getItem('ui-synced-report') || 'null')?.id === ref.id ? JSON.parse(sessionStorage.getItem('ui-synced-report')) : window.__fixtureReport), id: ref.id, ...(ref.id === 'ui-linked-delivery' ? { contactId: 'contact-test', clientUid: 'historical-test-uid' } : {}) }) }; }
 		export async function getDocs(q) {
 			window.__fixtureReads.push(q); if(window.__offline) throw new Error('offline');
 			if (q.name === 'cards' && window.__taskError) throw Object.assign(new Error('Simulated task failure'), { code: window.__taskError });
@@ -278,11 +274,14 @@ page.on('request', async (request) => {
 				return json(request, { error: 'Falha de envio simulada.' }, 503);
 			return json(request, { report: JSON.parse(request.postData()) });
 		}
+		if (url.pathname.endsWith('/location-map')) {
+			if (failMaps) return json(request, { error: 'Mapa indisponível.' }, 503);
+			return request.respond({ status: 200, contentType: 'image/png', body: image });
+		}
 		if (url.pathname.endsWith('/photos')) {
-			const { partKey } = JSON.parse(request.postData());
 			return json(request, { partStates: {
 				...fixtureReport.partStates,
-				[partKey]: { ...fixtureReport.partStates[partKey], photos: [], photoPaths: [] }
+				windows: { front: { ...fixtureReport.partStates.windows.front, photos: [], photoPaths: [] } }
 			} });
 		}
 		return json(request, { success: true });
@@ -677,9 +676,9 @@ try {
 	await page.setViewport({ ...page.viewport(), width: 390, height: 844 });
 	await click('Fechar');
 	await page.waitForFunction(() => !document.querySelector('dialog'));
-	assert.deepEqual(await page.$$eval('.damage-category', els => els.map(el => [el.dataset.category, el.querySelector('.damage-indicator')?.textContent || null])), [['interior', '2'], ['glass', '2'], ['headlights', '1']], 'Indicators count damaged items and exclude healthy items');
+	assert.deepEqual(await page.$$eval('.damage-category', els => els.map(el => [el.dataset.category, el.querySelector('.damage-indicator')?.textContent || null])), [['interior', '2'], ['windows', '2'], ['headlights', '1']], 'Indicators count damaged items and exclude healthy items');
 	assert.equal(await page.$eval('[data-category="headlights"]', el => el.getAttribute('aria-label')), 'Faróis, 1 item com dano');
-	assert.equal(await page.$eval('[data-category="glass"] .damage-indicator', el => getComputedStyle(el).backgroundColor), 'rgb(185, 28, 28)');
+	assert.equal(await page.$eval('[data-category="windows"] .damage-indicator', el => getComputedStyle(el).backgroundColor), 'rgb(185, 28, 28)');
 	await page.$eval('[data-category="interior"]', el => el.scrollIntoView({ block: 'center' }));
 	await screenshot('damage-indicators-mobile');
 	await captureAt(1440, 'damage-indicators-desktop');
@@ -821,16 +820,17 @@ try {
 	await waitText('Olá, Rafael.');
 	const locationDraft = await page.evaluate(async () => (await (await import('/src/lib/db.js')).getAllInspections('ui-test-inspector')).find(r => r.licensePlate === 'XYZ9A87'));
 	assert.equal(locationDraft.location.latitude, -22.9, 'Draft saves the acquired position');
-	const glassKey = Object.keys(locationDraft.partStates).find(key => locationDraft.partStates[key].name === 'Parabrisa dianteiro');
-	assert(glassKey.startsWith('glass_'));
-	const headlightKey = Object.keys(locationDraft.partStates).find(key => locationDraft.partStates[key].name === 'Farol dianteiro esquerdo');
-	assert(headlightKey.startsWith('headlights_'));
-	assert.equal(locationDraft.partStates[headlightKey].photos.length, 1);
-	assert.equal(locationDraft.partStates[glassKey].status, 'crack');
-	assert.equal(Object.values(locationDraft.partStates).filter(item => item.status !== 'none').length, 6);
-	assert.equal(Object.values(locationDraft.partStates).filter(item => item.status === 'none').length, 3);
-	assert.equal(locationDraft.partStates[glassKey].photos.length, 1);
-	assert.equal(locationDraft.partStates[glassKey].comments, 'Trinca no parabrisa e risco no vidro lateral.');
+	const glassKey = Object.keys(locationDraft.partStates.windows).find(key => locationDraft.partStates.windows[key].name === 'Parabrisa dianteiro');
+	const headlightKey = Object.keys(locationDraft.partStates.headlights).find(key => locationDraft.partStates.headlights[key].name === 'Farol dianteiro esquerdo');
+	assert(glassKey && headlightKey);
+	assert.equal(locationDraft.partStates.headlights[headlightKey].photos.length, 1);
+	assert.equal(locationDraft.partStates.windows[glassKey].status, 'crack');
+	const allParts = Object.entries(locationDraft.partStates).flatMap(([key, state]) =>
+		['interior', 'windows', 'headlights'].includes(key) ? Object.values(state) : [state]);
+	assert.equal(allParts.filter(item => item.status !== 'none').length, 6);
+	assert.equal(allParts.filter(item => item.status === 'none').length, 3);
+	assert.equal(locationDraft.partStates.windows[glassKey].photos.length, 1);
+	assert.equal(locationDraft.partStates.windows[glassKey].comments, 'Trinca no parabrisa e risco no vidro lateral.');
 	await page.goto(base + `/dashboard/new?id=${locationDraft.id}`);
 	await waitText('Contato vinculado');
 	await click('Danos', false);
@@ -865,8 +865,8 @@ try {
 			).getAllInspections('ui-test-inspector')
 		).find((r) => r.licensePlate === 'XYZ9A87')
 	);
-	assert.equal(completed.partStates[glassKey].status, 'crack');
-	assert.equal(completed.partStates[glassKey].photos.length, 1);
+	assert.equal(completed.partStates.windows[glassKey].status, 'crack');
+	assert.equal(completed.partStates.windows[glassKey].photos.length, 1);
 	const savedDiagram = await page.evaluate(async id => {
 		const report = await (await import('/src/lib/db.js')).getInspection('ui-test-inspector', id);
 		return (await fetch(report.carDiagramImage)).text();
@@ -875,7 +875,7 @@ try {
 	assert(savedDiagram.includes('height="134"'), 'The captured image uses the enlarged roof');
 	assert.equal(completed.status, 'completed');
 	assert.equal(completed.syncState, 'queued');
-	assert.equal(completed.schemaVersion, 4);
+	assert.equal(completed.schemaVersion, 5);
 	assert.equal(completed.location.latitude, -22.8);
 	assert.equal(completed.location.accuracy, 12);
 	assert(Number.isFinite(Date.parse(completed.location.capturedAt)));
@@ -896,27 +896,9 @@ try {
 	await waitText('Mapa indisponível');
 	assert((await text()).includes('-22.800000'));
 	assert.equal(await page.evaluate(() => window.__geoRequests.length), 0, 'Opening a completed report must not recapture location');
-	await page.evaluate(() => { sessionStorage.setItem('ui-map-disabled', 'true'); });
-	await page.reload();
-	await waitText('Mapa indisponível');
-	assert.equal(await page.$('img.location-map'), null, 'Missing API key falls back to coordinates');
-	await page.evaluate(() => { sessionStorage.removeItem('ui-map-disabled'); });
-	failMaps = false;
-	await page.reload();
-	await waitText('Laudo de vistoria');
-	await page.waitForFunction(() => document.querySelector('img.location-map')?.naturalWidth > 0);
-	const map = new URL(await page.$eval('img.location-map', el => el.src));
-	assert.equal(map.searchParams.get('zoom'), '16');
-	assert.equal(map.searchParams.get('size'), '640x320');
-	assert.equal(map.searchParams.get('scale'), '2');
-	assert.equal(map.searchParams.get('markers'), '-22.8,-46.633308');
-	assert((await text()).includes('Representante de Teste'));
+	assert.equal(await page.$('img.location-map'), null, 'Offline print can use coordinates only');
 	assert.equal(await page.$eval('img.report-signature', el => el.alt), 'Assinatura de Representante de Teste');
-	await page.emulateMediaType('print');
-	assert.equal(await page.$eval('.inspection-location', el => getComputedStyle(el).display !== 'none'), true);
-	assert.equal(await page.$eval('img.location-map', el => getComputedStyle(el).display !== 'none'), true);
-	await page.pdf({ path: path.join(output, 'contact-signer-report-print.pdf'), format: 'A4', printBackground: true });
-	await page.emulateMediaType('screen');
+	await page.pdf({ path: path.join(output, 'offline-location-report.pdf'), format: 'A4', printBackground: true });
 	await page.evaluate(() => { window.__offline = true; });
 	await page.goto(base + '/dashboard');
 	await waitText('Você está offline');
@@ -947,6 +929,19 @@ try {
 	assert.equal(remainingMedia, 0, 'A successful sync removes all local media');
 	await page.goto(base + `/dashboard/new/${completed.id}`);
 	await waitText('Vistoria não encontrada');
+	const uploadedReport = requests.find(r => r.path === '/api/checklists/sync' && r.body?.id === completed.id).body;
+	await page.evaluate(report => sessionStorage.setItem('ui-synced-report', JSON.stringify(report)), uploadedReport);
+	await page.goto(base + `/dashboard/checklists/${completed.id}`);
+	await waitText('Mapa indisponível');
+	assert((await text()).includes('-22.800000'));
+	failMaps = false;
+	await click('Tentar carregar mapa');
+	await page.waitForFunction(() => document.querySelector('img.location-map')?.naturalWidth > 0);
+	await page.emulateMediaType('print');
+	assert.equal(await page.$eval('img.location-map', el => getComputedStyle(el).display !== 'none'), true);
+	await page.pdf({ path: path.join(output, 'contact-signer-report-print.pdf'), format: 'A4', printBackground: true });
+	await page.emulateMediaType('screen');
+
 	console.log(
 		'PASS inspection: step validation, save error/retry, damage photo, CNH, signature, offline completion, real sync module against mocked storage/API'
 	);
@@ -1151,12 +1146,12 @@ try {
 	const deliveryDraft = await page.evaluate(async () => (
 		await (await import('/src/lib/db.js')).getAllInspections('ui-test-inspector')
 	).find(r => r.deliveryChecklistId === 'ui-linked-delivery'));
-	assert.equal(deliveryDraft.partStates.headlights_left.name, 'Farol esquerdo');
-	assert.equal(deliveryDraft.partStates.headlights_left.isNewDamage, false);
-	assert.equal(deliveryDraft.partStates.headlights_left.deliveryPhotos.length, 1);
-	assert.equal(deliveryDraft.partStates.glass_front.status, 'crack');
-	assert.equal(deliveryDraft.partStates.glass_front.isNewDamage, false);
-	assert.equal(deliveryDraft.partStates.glass_front.deliveryPhotos.length, 1);
+	assert.equal(deliveryDraft.partStates.headlights.left.name, 'Farol esquerdo');
+	assert.equal(deliveryDraft.partStates.headlights.left.isNewDamage, false);
+	assert.equal(deliveryDraft.partStates.headlights.left.deliveryPhotos.length, 1);
+	assert.equal(deliveryDraft.partStates.windows.front.status, 'crack');
+	assert.equal(deliveryDraft.partStates.windows.front.isNewDamage, false);
+	assert.equal(deliveryDraft.partStates.windows.front.deliveryPhotos.length, 1);
 	assert.equal(deliveryDraft.carId, 'car-fixture');
 	assert.equal(deliveryDraft.clientUid, 'historical-test-uid');
 	assert.equal(deliveryDraft.location, null, 'A return must not inherit the delivery location');
@@ -1197,16 +1192,16 @@ try {
 	assert.deepEqual(errors, [], 'No browser runtime errors');
 	assert(
 		requests.some(
-			(r) => r.path === '/api/checklists/sync' && r.body?.schemaVersion === 4 && r.body?.location?.latitude === -22.8 && r.body?.carId === 'car-test' && r.body?.contactId === 'contact-test' && r.body?.clientSignatureName === 'Representante de Teste'
+			(r) => r.path === '/api/checklists/sync' && r.body?.schemaVersion === 5 && r.body?.location?.latitude === -22.8 && r.body?.carId === 'car-test' && r.body?.contactId === 'contact-test' && r.body?.clientSignatureName === 'Representante de Teste'
 		)
 	);
 	const glassSync = requests.find(r => r.path === '/api/checklists/sync' && r.body?.id === completed.id);
-	assert.equal(glassSync.body.partStates[glassKey].status, 'crack');
-	assert.equal(glassSync.body.partStates[glassKey].photos.length, 1);
-	assert(glassSync.body.partStates[glassKey].photoPaths[0].includes(`/parts/${glassKey}/0.`));
-	assert(requests.some(r => r.method === 'DELETE' && r.path.endsWith('/photos') && r.body.partKey === 'glass_front'));
-	assert.equal(glassSync.body.partStates[headlightKey].name, 'Farol dianteiro esquerdo');
-	assert(glassSync.body.partStates[headlightKey].photoPaths[0].includes(`/parts/${headlightKey}/0.`));
+	assert.equal(glassSync.body.partStates.windows[glassKey].status, 'crack');
+	assert.equal(glassSync.body.partStates.windows[glassKey].photos.length, 1);
+	assert(glassSync.body.partStates.windows[glassKey].photoPaths[0].includes(`/parts/windows_${glassKey}/0.`));
+	assert(requests.some(r => r.method === 'DELETE' && r.path.endsWith('/photos') && r.body.partKey === 'windows_front'));
+	assert.equal(glassSync.body.partStates.headlights[headlightKey].name, 'Farol dianteiro esquerdo');
+	assert(glassSync.body.partStates.headlights[headlightKey].photoPaths[0].includes(`/parts/headlights_${headlightKey}/0.`));
 	console.log('PASS headlights: order below glass, keyboard, independent named items, healthy state, photos, editing, draft persistence, sync, report and delivery inheritance');
 	console.log('PASS glass: enlarged roof, no individual windows, stacked controls, keyboard, statuses, photos, list, draft restoration, offline completion, captured image, report, deletion, delivery comparison and sync');
 	console.log('PASS location: automatic capture, denial/retry, stale response, recapture and draft reload, static map/fallback, offline persistence/sync, report and print');

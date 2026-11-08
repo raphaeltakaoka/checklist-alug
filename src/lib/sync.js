@@ -2,7 +2,7 @@ import { storage } from "$lib/firebaseStorage.js";
 import { deleteInspection, getInspection, saveInspection } from '$lib/db.js';
 import { getDownloadURL, ref, uploadBytesResumable } from "firebase/storage";
 import { authenticatedFetch } from "$lib/api.js";
-import { isItemCategory, partCategory } from '$lib/inspection.js';
+import { CHECKLIST_SCHEMA_VERSION, isItemCategory, partCategory, partStateEntries, setPartState } from '$lib/inspection.js';
 import { isValidLocation } from '$lib/inspectionLocation.js';
 
 const UPLOAD_CONCURRENCY = 2;
@@ -64,9 +64,9 @@ function dateToISOString(value, fallback = new Date()) {
 
 function cleanPartStates(partStates = {}) {
   const clean = {};
-  for (const [partKey, state] of Object.entries(partStates)) {
+  for (const [partKey, state] of partStateEntries(partStates)) {
     if (!state || typeof state !== "object") continue;
-    clean[partKey] = {
+    setPartState(clean, partKey, {
       ...(isItemCategory(partCategory(partKey)) ? { name: String(state.name || '').trim() } : {}),
       status: state.status || "none",
       comments: String(state.comments || "").slice(0, 1000),
@@ -80,7 +80,7 @@ function cleanPartStates(partStates = {}) {
       deliveryPhotos: Array.isArray(state.deliveryPhotos)
         ? state.deliveryPhotos.filter(Boolean).slice(0, 6)
         : [],
-    };
+    });
   }
   return clean;
 }
@@ -112,7 +112,7 @@ async function uploadInspectionMedia(report) {
     report.carDiagramImagePath = path;
   });
 
-  for (const [partKey, state] of Object.entries(report.partStates || {})) {
+  for (const [partKey, state] of partStateEntries(report.partStates)) {
     state.photoPaths = Array.isArray(state.photoPaths)
       ? state.photoPaths.slice(0, state.photos?.length || 0)
       : [];
@@ -167,7 +167,7 @@ export async function syncInspectionToCloud(inspection) {
   if (!ownerUid || !inspection?.id) throw new Error("Inspection ownership is required for sync.");
   const hydrated = await getInspection(ownerUid, inspection.id);
   if (!hydrated) throw new Error("The local inspection could not be found.");
-  if (hydrated.schemaVersion !== 4) throw new Error('Unsupported inspection schema version.');
+  if (hydrated.schemaVersion !== CHECKLIST_SCHEMA_VERSION) throw new Error('Unsupported inspection schema version.');
   if (!isValidLocation(hydrated.location)) throw new Error('Localização inválida. Não foi possível enviar a vistoria.');
 
   await saveInspection({
