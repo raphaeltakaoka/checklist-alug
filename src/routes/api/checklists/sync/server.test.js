@@ -67,6 +67,71 @@ describe('shared profile permissions during sync', () => {
 });
 
 describe('catalog validation during checklist sync', () => {
+  it('synchronizes an internal inspection with no contact lookup and no client or delivery data', async () => {
+    const body = payload({
+      inspectionType: 'Interno',
+      deliveryChecklistId: 'delivery-id',
+      deliverySnapshot: { id: 'delivery-id' },
+      newDamageCount: 1,
+    });
+    const response = await sync(body);
+    expect(response.status).toBe(200);
+    expect(mocks.get.mock.calls).toEqual([[{ collection: 'cars', id: 'car-id' }]]);
+    expect(mocks.set.mock.calls[0][1]).toMatchObject({
+      inspectionType: 'Interno',
+      clientName: '',
+      contactId: null,
+      clientUid: null,
+      clientSignatureName: '',
+      clientLicensePhoto: '',
+      clientLicensePhotoPath: '',
+      clientSignature: '',
+      clientSignaturePath: '',
+      deliveryChecklistId: null,
+      deliverySnapshot: null,
+      newDamageCount: 0,
+      location: body.location,
+    });
+    expect(mocks.set.mock.calls[1][1]).toMatchObject({ inspectionType: 'Interno', clientName: '' });
+  });
+  it.each([
+    { deliveryChecklistId: 'internal-id' },
+    { deliverySnapshot: { id: 'internal-id' } },
+  ])('rejects an internal inspection as the source of a return: %j', link => {
+    mocks.get.mockImplementation(ref => ref.collection === 'checklists'
+      ? document({ inspectionType: 'Interno' }, 'internal-id')
+      : withContact(document({ nome: 'Maria' }))(ref));
+    return sync(payload({ inspectionType: 'Devolução', ...link })).then(response => {
+      expect(response.status).toBe(400);
+      expect(mocks.set).not.toHaveBeenCalled();
+    });
+  });
+  it.each([document({ inspectionType: 'Entrega' }, 'delivery-id'), absent])(
+    'preserves a return linked to a delivery that may still be queued for sync', async delivery => {
+      mocks.get.mockImplementation(ref => ref.collection === 'checklists'
+        ? delivery
+        : withContact(document({ nome: 'Maria' }))(ref));
+      const response = await sync(payload({
+        inspectionType: 'Devolução',
+        deliveryChecklistId: 'delivery-id',
+        deliverySnapshot: { id: 'delivery-id' },
+        clientLicensePhotoPath: '',
+      }));
+      expect(response.status).toBe(200);
+      expect((await response.json()).report).toMatchObject({
+        inspectionType: 'Devolução',
+        deliveryChecklistId: 'delivery-id',
+        clientLicensePhotoPath: '',
+      });
+    },
+  );
+  it.each([['Interno', 'Entrega'], ['Entrega', 'Interno']])(
+    'rejects changing a synchronized inspection from %s to %s', async (previous, next) => {
+      mocks.getAll.mockResolvedValue([document(payload({ inspectionType: previous })), absent]);
+      expect((await sync(payload({ inspectionType: next }))).status).toBe(400);
+      expect(mocks.set).not.toHaveBeenCalled();
+    }
+  );
   it('persists location only in the complete report and returns it unchanged', async () => {
     const response = await sync();
     expect(response.status).toBe(200);

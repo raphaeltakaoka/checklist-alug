@@ -103,7 +103,7 @@
   <div class="page-heading">
     <div>
       <h1 class="plate" style="font-size:1.8rem">{inspection.licensePlate}</h1>
-      <p>{inspection.clientName}</p>
+      {#if inspection.inspectionType !== "Interno"}<p>{inspection.clientName}</p>{/if}
     </div>
     <span class="badge">{inspection.inspectionType}</span>
   </div>
@@ -307,37 +307,39 @@
           </div>{/if}
       </div>{/each}
   </section>
-  <section class="report-section">
-    <h2>Identificação e assinatura</h2>
-    <p class="muted" style="margin-bottom:20px">
-      Pelo presente instrumento, autorizo e concordo que os danos mapeados acima refletem o estado
-      físico exato do veículo no momento da inspeção.
-    </p>
-    <div class="review-grid">
-      <div>
-        <h3>CNH do cliente</h3>
-        {#if inspection.clientLicensePhoto}<button
-            class="text-action"
-            aria-label="Ampliar CNH do cliente"
-            onclick={() => (preview = { value: inspection.clientLicensePhoto })}
-            ><img
-              src={mediaPreviewUrl(inspection.clientLicensePhoto)}
-              alt="CNH do cliente"
-              class="upload-preview"
-            /></button
-          >{:else}<p class="muted">Não disponível.</p>{/if}
+  {#if inspection.inspectionType !== "Interno"}
+    <section class="report-section">
+      <h2>Identificação e assinatura</h2>
+      <p class="muted" style="margin-bottom:20px">
+        Pelo presente instrumento, autorizo e concordo que os danos mapeados acima refletem o estado
+        físico exato do veículo no momento da inspeção.
+      </p>
+      <div class="review-grid">
+        <div>
+          <h3>CNH do cliente</h3>
+          {#if inspection.clientLicensePhoto}<button
+              class="text-action"
+              aria-label="Ampliar CNH do cliente"
+              onclick={() => (preview = { value: inspection.clientLicensePhoto })}
+              ><img
+                src={mediaPreviewUrl(inspection.clientLicensePhoto)}
+                alt="CNH do cliente"
+                class="upload-preview"
+              /></button
+            >{:else}<p class="muted">Não disponível.</p>{/if}
+        </div>
+        <div>
+          <h3>{inspection.clientSignatureName}</h3>
+          {#if inspection.clientSignature}<img
+              src={mediaPreviewUrl(inspection.clientSignature)}
+              alt={`Assinatura de ${inspection.clientSignatureName}`}
+              class="report-signature"
+            />{:else}<p class="muted">Assinatura não disponível.</p>{/if}
+          <p class="muted">Assinatura do cliente</p>
+        </div>
       </div>
-      <div>
-        <h3>{inspection.clientSignatureName}</h3>
-        {#if inspection.clientSignature}<img
-            src={mediaPreviewUrl(inspection.clientSignature)}
-            alt={`Assinatura de ${inspection.clientSignatureName}`}
-            class="report-signature"
-          />{:else}<p class="muted">Assinatura não disponível.</p>{/if}
-        <p class="muted">Assinatura do cliente</p>
-      </div>
-    </div>
-  </section>
+    </section>
+  {/if}
 </article>
 {#if preview}<Dialog
     title={preview.part ? partName(preview.part, getPartState(inspection.partStates, preview.part)) : "Documento do cliente"}

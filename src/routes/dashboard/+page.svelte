@@ -116,10 +116,12 @@
 			<h1>Olá, {authState.displayName.split(' ')[0]}.</h1>
 			<p>Uma nova vistoria. Tudo em ordem.</p>
 		</div>
-		{#if authState.canInspect('create')}<a
-				class="btn primary"
-				href="/dashboard/new"><Icon name="plus" />Nova vistoria</a
-			>{/if}
+		{#if authState.canInspect('create')}
+			<div class="inspection-start-actions">
+				<a class="btn primary" href="/dashboard/new"><Icon name="plus" />Nova vistoria</a>
+				<a class="btn" href="/dashboard/new?type=Interno"><Icon name="plus" />Nova vistoria interna</a>
+			</div>
+		{/if}
 	</div>
 	{#if page.url.searchParams.get('completed')}<Notice
 			type="success"
@@ -238,3 +240,20 @@
 				>{deleteBusy ? 'Excluindo…' : 'Excluir vistoria'}</button
 			>{/snippet}</Dialog
 	>{/if}
+
+<style>
+	.inspection-start-actions {
+		display: grid;
+		gap: 8px;
+	}
+
+	@media (max-width: 760px) {
+		.inspection-start-actions {
+			width: 100%;
+		}
+
+		.inspection-start-actions .btn {
+			min-height: 48px;
+		}
+	}
+</style>

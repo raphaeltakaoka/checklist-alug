@@ -4,14 +4,17 @@ import { isItemCategory, partCategory, partStateEntries } from '$lib/inspection.
 /** Validation shared by step links, Continue, and final submission. */
 export function inspectionErrors(report, throughStep = 1) {
 	const errors = {};
+	const requiresClient = report.inspectionType !== 'Interno';
 	if (!/^[A-Z0-9]{7}$/.test(report.licensePlate || ''))
 		errors.licensePlate = 'Informe os 7 caracteres da placa.';
 	else if (!report.carId)
 		errors.licensePlate = 'Selecione um veículo cadastrado nos resultados da busca.';
-	if (!report.clientName?.trim() || report.clientName.length > 200)
-		errors.clientName = 'Informe o nome do cliente (até 200 caracteres).';
-	if (!report.contactId)
-		errors.clientName = 'Selecione um contato cadastrado nos resultados da busca.';
+	if (requiresClient) {
+		if (!report.clientName?.trim() || report.clientName.length > 200)
+			errors.clientName = 'Informe o nome do cliente (até 200 caracteres).';
+		if (!report.contactId)
+			errors.clientName = 'Selecione um contato cadastrado nos resultados da busca.';
+	}
 	if (!report.inspectorName?.trim() || report.inspectorName.length > 120)
 		errors.inspectorName = 'Informe o nome do inspetor (até 120 caracteres).';
 	if (
@@ -37,6 +40,8 @@ export function inspectionErrors(report, throughStep = 1) {
 	if (throughStep >= 4) {
 		if (!isValidLocation(report.location))
 			errors.location = 'Obtenha a localização atual antes de concluir.';
+	}
+	if (throughStep >= 4 && requiresClient) {
 		if (!report.clientSignatureName?.trim() || report.clientSignatureName.length > 200)
 			errors.clientSignatureName = 'Informe o nome de quem assina (até 200 caracteres).';
 		if (!report.clientLicensePhoto)

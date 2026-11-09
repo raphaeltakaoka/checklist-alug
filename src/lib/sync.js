@@ -99,14 +99,16 @@ async function uploadInspectionMedia(report) {
     });
   };
 
-  await addUpload(report.clientLicensePhoto, "license", ({ url, path }) => {
-    report.clientLicensePhoto = url;
-    report.clientLicensePhotoPath = path;
-  });
-  await addUpload(report.clientSignature, "signature", ({ url, path }) => {
-    report.clientSignature = url;
-    report.clientSignaturePath = path;
-  });
+  if (report.inspectionType !== "Interno") {
+    await addUpload(report.clientLicensePhoto, "license", ({ url, path }) => {
+      report.clientLicensePhoto = url;
+      report.clientLicensePhotoPath = path;
+    });
+    await addUpload(report.clientSignature, "signature", ({ url, path }) => {
+      report.clientSignature = url;
+      report.clientSignaturePath = path;
+    });
+  }
   await addUpload(report.carDiagramImage, "car-diagram", ({ url, path }) => {
     report.carDiagramImage = url;
     report.carDiagramImagePath = path;

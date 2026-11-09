@@ -54,14 +54,32 @@ export async function POST({ request }) {
 
       const expectedOwnerUid = existingData?.ownerUid || decodedToken.uid;
       report = validateChecklistPayload(payload, expectedOwnerUid);
+      const isInternal = report.inspectionType === "Interno";
+      if (existingData && isInternal !== (existingData.inspectionType === "Interno")) {
+        throw new ApiError(400, 'O tipo Interno não pode ser alterado após a sincronização.');
+      }
       if (existing.exists && !sameLocation(existing.data().location, report.location)) {
         throw new ApiError(400, 'A localização de uma vistoria sincronizada não pode ser alterada.');
       }
       if (existing.exists && existing.data().location.mapImagePath) {
         report.location.mapImagePath = existing.data().location.mapImagePath;
       }
-      const contact = contactSelection(await transaction.get(adminDb.collection('contacts').doc(report.contactId)));
-      report.clientUid = contact.uid;
+      if (!isInternal) {
+        const contact = contactSelection(await transaction.get(adminDb.collection('contacts').doc(report.contactId)));
+        report.clientUid = contact.uid;
+      }
+      if (report.inspectionType === "Devolução") {
+        const deliveryIds = new Set([report.deliveryChecklistId, report.deliverySnapshot?.id].filter(Boolean));
+        for (const deliveryId of deliveryIds) {
+          if (!/^[A-Za-z0-9_-]{1,128}$/.test(deliveryId)) {
+            throw new ApiError(400, 'ID de vistoria de entrega inválido.');
+          }
+          const delivery = await transaction.get(adminDb.collection("checklists").doc(deliveryId));
+          if (delivery.data()?.inspectionType === "Interno") {
+            throw new ApiError(400, 'Uma vistoria interna não pode ser vinculada a uma devolução.');
+          }
+        }
+      }
       const car = carSelection(await transaction.get(adminDb.collection('cars').doc(report.carId)));
       if (car.plate !== report.licensePlate) {
         throw new ApiError(400, 'A placa não corresponde ao veículo vinculado. Selecione o veículo novamente.');

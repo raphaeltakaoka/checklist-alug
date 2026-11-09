@@ -33,6 +33,20 @@ const deferred = () => {
 afterEach(() => vi.useRealTimers());
 
 describe('inspection navigation validation', () => {
+	it('requires the vehicle and location for an internal inspection without client details', () => {
+		const internal = {
+			...report,
+			inspectionType: 'Interno',
+			clientName: '',
+			contactId: null,
+			clientSignatureName: '',
+			clientLicensePhoto: null,
+			clientSignature: null
+		};
+		expect(inspectionErrors(internal, 4)).toEqual({});
+		expect(inspectionErrors({ ...internal, carId: null, location: null }, 4))
+			.toEqual({ licensePlate: expect.any(String), location: expect.any(String) });
+	});
 	it('allows location-free drafts but requires a valid location at conclusion', () => {
 		const draft = { ...report, location: null };
 		expect(inspectionErrors(draft, 3)).toEqual({});

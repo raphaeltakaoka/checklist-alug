@@ -3,7 +3,7 @@
   import Dialog from './Dialog.svelte';
   import DamageModal from './DamageModal.svelte';
 
-  let { category = $bindable(), partStates = $bindable() } = $props();
+  let { category = $bindable(), partStates = $bindable(), markNewDamage = true } = $props();
   let editing = $state(null);
   let deleting = $state(null);
   let items = $derived(partEntries(partStates, category));
@@ -44,7 +44,7 @@
 
 {#if editing}
   {#key editing}
-    <DamageModal bind:partId={editing} bind:partStates partName={getPartState(partStates, editing)?.name || 'Adicionar item'} />
+    <DamageModal bind:partId={editing} bind:partStates {markNewDamage} partName={getPartState(partStates, editing)?.name || 'Adicionar item'} />
   {/key}
 {/if}
 {#if deleting}

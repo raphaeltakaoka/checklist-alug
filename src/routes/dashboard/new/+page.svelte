@@ -119,6 +119,8 @@
     if (next === 4) locationCapture?.capture();
   }
 
+  let isInternal = $derived(report.inspectionType === "Interno");
+  let heading = $derived(`${page.url.searchParams.has("id") ? "Continuar" : "Nova"} vistoria${isInternal ? " interna" : ""}`);
   let eligible = $derived(draftStarted || !!(report.licensePlate || report.clientName || report.contactId));
   let photoCount = $derived(
     partStateEntries(report.partStates).reduce((sum, [, part]) => sum + (part.photos?.length || 0), 0),
@@ -228,7 +230,7 @@
   }
 
   function applyDelivery(delivery) {
-    if (!delivery || normalizePlate(delivery.licensePlate) !== normalizePlate(report.licensePlate)) return;
+    if (delivery?.inspectionType !== "Entrega" || normalizePlate(delivery.licensePlate) !== normalizePlate(report.licensePlate)) return;
     report.deliveryChecklistId = delivery.id;
     report.deliverySnapshot = {
       id: delivery.id,
@@ -396,7 +398,7 @@
     }
     busy = true;
     try {
-      if (next === 4) suggestSignatureName(report);
+      if (next === 4 && !isInternal) suggestSignatureName(report);
       if (await persist()) {
         setStep(next);
         await tick();
@@ -558,7 +560,9 @@
         const typeParam = page.url.searchParams.get("type");
         const deliveryIdParam = page.url.searchParams.get("deliveryId");
         const plateParam = page.url.searchParams.get("plate");
-        if (typeParam === "Devolucao" || typeParam === "Devolução") {
+        if (typeParam === "Interno") {
+          report.inspectionType = "Interno";
+        } else if (typeParam === "Devolucao" || typeParam === "Devolução") {
           report.inspectionType = "Devolução";
         }
         if (plateParam) {
@@ -567,7 +571,7 @@
             .toUpperCase()
             .slice(0, 7);
         }
-        if (deliveryIdParam) {
+        if (deliveryIdParam && !isInternal) {
           report.inspectionType = "Devolução";
           try {
             let delivery = await getInspection(authState.user.uid, deliveryIdParam).catch(
@@ -579,7 +583,7 @@
                 delivery = normalizeCloudInspection(snap.data(), snap.id);
               }
             }
-            if (delivery) {
+            if (delivery?.inspectionType === "Entrega") {
               if (!alive) return;
               report.licensePlate = normalizePlate(delivery.licensePlate || report.licensePlate);
               applyDelivery(delivery);
@@ -650,7 +654,7 @@
 
 <svelte:head
   ><title
-    >{page.url.searchParams.has("id") ? "Continuar vistoria" : "Nova vistoria"} · Checklist Alug</title
+    >{heading} · Checklist Alug</title
   ></svelte:head
 >
 <main class="page narrow inspection-form" bind:this={formRoot}>
@@ -659,9 +663,7 @@
       <div class="eyebrow">
         {report.licensePlate || "Checklist de veículos"}
       </div>
-      <h1>
-        {page.url.searchParams.has("id") ? "Continuar vistoria" : "Nova vistoria"}
-      </h1>
+      <h1>{heading}</h1>
     </div>
     <span class="badge">Etapa {step} de 4</span>
   </div>
@@ -689,40 +691,46 @@
         <div class="form-section-title">
           <h2 id="step-title" tabindex="-1">{steps[step - 1]}</h2>
           <p>
-            {step === 1
-              ? "Identifique o veículo e o cliente."
-              : step === 2
-                ? "Registre as condições de entrega ou devolução."
-                : step === 3
-                  ? "Selecione uma peça para registrar danos e fotos."
-                  : "Confira os dados e peça a assinatura do cliente."}
+            {#if step === 1}
+              {isInternal ? "Identifique o veículo." : "Identifique o veículo e o cliente."}
+            {:else if step === 2}
+              {isInternal ? "Registre as condições do veículo." : "Registre as condições de entrega ou devolução."}
+            {:else if step === 3}
+              Selecione uma peça para registrar danos e fotos.
+            {:else}
+              {isInternal ? "Confira os dados e confirme a localização." : "Confira os dados e peça a assinatura do cliente."}
+            {/if}
           </p>
         </div>
         {#if step === 1}
           <div class="form-grid">
             <div class="field span-two">
               <span class="field-label" id="type-label">Tipo de vistoria</span>
-              <div class="segmented" aria-labelledby="type-label">
-                {#each ["Entrega", "Devolução"] as type (type)}<button
-                    type="button"
-                    aria-pressed={report.inspectionType === type}
-                    onclick={() => {
-                      report.inspectionType = type;
-                      if (type === "Entrega") {
-                        if (report.deliveryChecklistId) clearDelivery();
-                        else invalidateDeliverySearch();
-                      }
-                      if (
-                        type === "Devolução" &&
-                        report.carId &&
-                        report.licensePlate.length === 7 &&
-                        !report.deliveryChecklistId
-                      ) {
-                        searchDelivery(report.licensePlate);
-                      }
-                    }}>{type}</button
-                  >{/each}
-              </div>
+              {#if isInternal}
+                <div><span class="badge">Interno</span></div>
+              {:else}
+                <div class="segmented" aria-labelledby="type-label">
+                  {#each ["Entrega", "Devolução"] as type (type)}<button
+                      type="button"
+                      aria-pressed={report.inspectionType === type}
+                      onclick={() => {
+                        report.inspectionType = type;
+                        if (type === "Entrega") {
+                          if (report.deliveryChecklistId) clearDelivery();
+                          else invalidateDeliverySearch();
+                        }
+                        if (
+                          type === "Devolução" &&
+                          report.carId &&
+                          report.licensePlate.length === 7 &&
+                          !report.deliveryChecklistId
+                        ) {
+                          searchDelivery(report.licensePlate);
+                        }
+                      }}>{type}</button
+                    >{/each}
+                </div>
+              {/if}
             </div>
             {#if report.inspectionType === "Devolução"}
               <div class="field span-two">
@@ -808,14 +816,16 @@
               onInput={editPlate}
             />
             {#if carLinkError}<p class="muted" role="status">{carLinkError}</p>{/if}
-            <ClientContactField
-              bind:name={report.clientName}
-              contactId={report.contactId}
-              error={errors.clientName || ''}
-              onSelect={selectContact}
-              onClear={clearContact}
-            />
-            {#if contactLinkError}<p class="muted" role="status">{contactLinkError}</p>{/if}
+            {#if !isInternal}
+              <ClientContactField
+                bind:name={report.clientName}
+                contactId={report.contactId}
+                error={errors.clientName || ''}
+                onSelect={selectContact}
+                onClear={clearContact}
+              />
+              {#if contactLinkError}<p class="muted" role="status">{contactLinkError}</p>{/if}
+            {/if}
             <div class="field">
               <label for="inspector">Inspetor *</label><input
                 id="inspector"
@@ -1029,10 +1039,12 @@
                   <dt>Tipo</dt>
                   <dd>{report.inspectionType}</dd>
                 </div>
-                <div>
-                  <dt>Cliente</dt>
-                  <dd>{report.clientName}</dd>
-                </div>
+                {#if !isInternal}
+                  <div>
+                    <dt>Cliente</dt>
+                    <dd>{report.clientName}</dd>
+                  </div>
+                {/if}
                 <div>
                   <dt>Inspetor</dt>
                   <dd>{report.inspectorName}</dd>
@@ -1057,81 +1069,83 @@
               <InspectionLocation compact location={report.location} status={locationState.status} error={locationState.error} onretry={() => locationCapture.capture()} />
               <span id="location-error" class="field-error">{errors.location || ''}</span>
             </div>
-            <div class="field">
-              <span class="field-label" id="license-label">Foto da CNH *</span><Notice
-                message={photoError}
-              />
-              {#if report.clientLicensePhoto}<img
-                  class="upload-preview"
-                  src={mediaPreviewUrl(report.clientLicensePhoto)}
-                  alt="CNH do cliente"
-                />{/if}
-              {#if report.deliverySnapshot?.clientLicensePhoto && report.clientLicensePhoto === report.deliverySnapshot.clientLicensePhoto}
-                <p class="field-help" style="color:#15803d">
-                  Foto da CNH reutilizada da entrega. Clique em "Refazer foto" ou "Galeria" se for
-                  outro condutor.
-                </p>
-              {/if}
-              <div class="upload-controls">
-                <button
-                  class="btn"
-                  aria-labelledby="license-label camera-label"
-                  data-invalid={!!errors.clientLicensePhoto}
-                  aria-describedby="license-error"
-                  onclick={() => cameraInput.click()}
-                  ><Icon name="camera" /><span id="camera-label"
-                    >{processing
-                      ? "Preparando…"
-                      : report.clientLicensePhoto
-                        ? "Refazer foto"
-                        : "Tirar foto"}</span
-                  ></button
-                ><button class="btn" onclick={() => galleryInput.click()}
-                  ><Icon name="image" />Galeria</button
+            {#if !isInternal}
+              <div class="field">
+                <span class="field-label" id="license-label">Foto da CNH *</span><Notice
+                  message={photoError}
+                />
+                {#if report.clientLicensePhoto}<img
+                    class="upload-preview"
+                    src={mediaPreviewUrl(report.clientLicensePhoto)}
+                    alt="CNH do cliente"
+                  />{/if}
+                {#if report.deliverySnapshot?.clientLicensePhoto && report.clientLicensePhoto === report.deliverySnapshot.clientLicensePhoto}
+                  <p class="field-help" style="color:#15803d">
+                    Foto da CNH reutilizada da entrega. Clique em "Refazer foto" ou "Galeria" se for
+                    outro condutor.
+                  </p>
+                {/if}
+                <div class="upload-controls">
+                  <button
+                    class="btn"
+                    aria-labelledby="license-label camera-label"
+                    data-invalid={!!errors.clientLicensePhoto}
+                    aria-describedby="license-error"
+                    onclick={() => cameraInput.click()}
+                    ><Icon name="camera" /><span id="camera-label"
+                      >{processing
+                        ? "Preparando…"
+                        : report.clientLicensePhoto
+                          ? "Refazer foto"
+                          : "Tirar foto"}</span
+                    ></button
+                  ><button class="btn" onclick={() => galleryInput.click()}
+                    ><Icon name="image" />Galeria</button
+                  >
+                </div>
+                <input
+                  class="sr-only"
+                  tabindex="-1"
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  bind:this={cameraInput}
+                  onchange={uploadLicense}
+                  aria-label="Capturar CNH"
+                /><input
+                  class="sr-only"
+                  tabindex="-1"
+                  type="file"
+                  accept="image/*"
+                  bind:this={galleryInput}
+                  onchange={uploadLicense}
+                  aria-label="Escolher CNH da galeria"
+                /><span id="license-error" class="field-error">{errors.clientLicensePhoto || ""}</span
                 >
               </div>
-              <input
-                class="sr-only"
-                tabindex="-1"
-                type="file"
-                accept="image/*"
-                capture="environment"
-                bind:this={cameraInput}
-                onchange={uploadLicense}
-                aria-label="Capturar CNH"
-              /><input
-                class="sr-only"
-                tabindex="-1"
-                type="file"
-                accept="image/*"
-                bind:this={galleryInput}
-                onchange={uploadLicense}
-                aria-label="Escolher CNH da galeria"
-              /><span id="license-error" class="field-error">{errors.clientLicensePhoto || ""}</span
-              >
-            </div>
-            <div class="field">
-              <label for="signature-name">Nome *</label>
-              <input
-                id="signature-name"
-                bind:value={report.clientSignatureName}
-                maxlength="200"
-                required
-                autocomplete="name"
-                placeholder="Nome de quem assina"
-                aria-invalid={!!errors.clientSignatureName}
-                aria-describedby="signature-name-help signature-name-error"
-                oninput={() => { report.signatureNameInitialized = true; }}
-              />
-              <span id="signature-name-help" class="muted">Nome de quem assina, independente do contato vinculado.</span>
-              <span id="signature-name-error" class="field-error">{errors.clientSignatureName || ''}</span>
-            </div>
-            <div class="field">
-              <span class="field-label">Assinatura do cliente *</span><SignaturePad
-                bind:signature={report.clientSignature}
-                invalid={!!errors.clientSignature}
-              /><span class="field-error">{errors.clientSignature || ""}</span>
-            </div>
+              <div class="field">
+                <label for="signature-name">Nome *</label>
+                <input
+                  id="signature-name"
+                  bind:value={report.clientSignatureName}
+                  maxlength="200"
+                  required
+                  autocomplete="name"
+                  placeholder="Nome de quem assina"
+                  aria-invalid={!!errors.clientSignatureName}
+                  aria-describedby="signature-name-help signature-name-error"
+                  oninput={() => { report.signatureNameInitialized = true; }}
+                />
+                <span id="signature-name-help" class="muted">Nome de quem assina, independente do contato vinculado.</span>
+                <span id="signature-name-error" class="field-error">{errors.clientSignatureName || ''}</span>
+              </div>
+              <div class="field">
+                <span class="field-label">Assinatura do cliente *</span><SignaturePad
+                  bind:signature={report.clientSignature}
+                  invalid={!!errors.clientSignature}
+                /><span class="field-error">{errors.clientSignature || ""}</span>
+              </div>
+            {/if}
           </div>
         {/if}
       </fieldset>
@@ -1152,7 +1166,9 @@
                 ? "Falha ao salvar — tente novamente"
                 : eligible
                   ? "Alterações pendentes"
-                  : "Informe placa ou cliente para salvar"}</span
+                  : isInternal
+                    ? "Informe a placa para salvar"
+                    : "Informe placa ou cliente para salvar"}</span
         ><button
           class="btn primary"
           disabled={busy || processing || (step === 4 && locationState.status !== 'success')}
@@ -1167,11 +1183,12 @@
   {/if}
 </main>
 {#if isItemCategory(activePart)}
-  <DamageItemsModal bind:category={activePart} bind:partStates={report.partStates} />
+  <DamageItemsModal bind:category={activePart} bind:partStates={report.partStates} markNewDamage={!isInternal} />
 {:else if activePart}<DamageModal
     bind:partId={activePart}
     bind:partStates={report.partStates}
     partName={PART_NAMES[activePart]}
+    markNewDamage={!isInternal}
   />{/if}
 {#if discardOpen}<Dialog title="Sair sem salvar?" onclose={() => (discardOpen = false)}
     ><p>

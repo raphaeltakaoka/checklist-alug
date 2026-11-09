@@ -31,9 +31,8 @@
 			<Icon name={draft ? 'edit' : 'file'} size={22} />
 		</div>
 		<div class="record-main">
-			<strong class="plate">{inspection.licensePlate}</strong><span
-				>{inspection.clientName}</span
-			>
+			<strong class="plate">{inspection.licensePlate}</strong>
+			{#if inspection.clientName}<span>{inspection.clientName}</span>{/if}
 		</div>
 		<div class="record-meta">
 			<span>{inspection.inspectionType}</span><span

@@ -216,6 +216,8 @@ page.on('request', async (request) => {
 			const plateFilter = q.constraints.find(c => c.where?.[0] === 'licensePlate');
 			if (plateFilter && window.__delayHistory) await new Promise(resolve => setTimeout(resolve, 600));
 			const firstPage = Array.from({length:20}, (_, i) => ({...window.__fixtureReport, id:'cloud-'+i}));
+			const internal = JSON.parse(sessionStorage.getItem('ui-internal-report') || 'null');
+			if (internal) firstPage[0] = internal;
 			const later = [
 				{...window.__fixtureReport, id:'older-match', licensePlate:'ZZZ9Z99'},
 				{...window.__fixtureReport, id:'plate-old', licensePlate:'XYZ9A87', inspectionDateTime:'2026-08-01T10:00:00.000Z'},
@@ -1205,6 +1207,94 @@ try {
 	console.log('PASS headlights: order below glass, keyboard, independent named items, healthy state, photos, editing, draft persistence, sync, report and delivery inheritance');
 	console.log('PASS glass: enlarged roof, no individual windows, stacked controls, keyboard, statuses, photos, list, draft restoration, offline completion, captured image, report, deletion, delivery comparison and sync');
 	console.log('PASS location: automatic capture, denial/retry, stale response, recapture and draft reload, static map/fallback, offline persistence/sync, report and print');
+	await page.goto(base + '/dashboard');
+	await click('Nova vistoria interna');
+	await page.waitForSelector('#plate');
+	assert.equal(await page.$eval('h1', el => el.textContent), 'Nova vistoria interna');
+	assert.equal(await page.$('.segmented'), null);
+	assert.equal(await page.$('#client'), null);
+	await fillPlate('xyz');
+	await tapSuggestionAfterBlur('plate', 1);
+	await waitText('Veículo vinculado');
+	await click('Continuar');
+	await page.waitForSelector('#mileage');
+	await page.type('#mileage', '12345');
+	await click('Continuar');
+	await click('Lista de peças');
+	await click('Capô', false);
+	await click('Risco');
+	await page.type('#damage-comments', 'Avaria da vistoria interna.');
+	await (await page.$$('dialog input[type=file]'))[1].uploadFile(imageFile);
+	await waitText('1/6');
+	await click('Salvar peça');
+	await page.waitForFunction(() => !document.querySelector('dialog'));
+	await click('Salvar e sair');
+	await waitText('Olá, Rafael.');
+	const internalDraft = await page.evaluate(async () =>
+		(await (await import('/src/lib/db.js')).getAllInspections('ui-test-inspector'))
+			.find(r => r.inspectionType === 'Interno'));
+	assert.equal(internalDraft.status, 'draft');
+	assert.equal(internalDraft.carId, 'car-other');
+	await page.click(`a[href="/dashboard/new?id=${internalDraft.id}"]`);
+	await waitText('Continuar vistoria interna');
+	await page.waitForSelector('#plate');
+	assert.equal(await page.$('.segmented'), null);
+	assert.equal(await page.$('#client'), null);
+	await page.evaluate(() => { window.__geoError = 1; });
+	await click('Conclusão', false);
+	await waitText('Localização não capturada.');
+	assert.equal(await page.$eval('.inspection-actions .primary', el => el.disabled), true);
+	assert.equal(await page.$('#license-label, #signature-name, canvas'), null);
+	assert(!(await text()).includes('Cliente'));
+	await page.evaluate(() => {
+		window.__geoError = 0;
+		window.__offline = true;
+		sessionStorage.setItem('ui-offline', 'true');
+		dispatchEvent(new Event('offline'));
+	});
+	await click('Tentar novamente');
+	await waitText('Localização capturada.');
+	await click('Concluir vistoria');
+	await waitText('Vistoria concluída e salva neste dispositivo');
+	await page.goto(base + `/dashboard/new/${internalDraft.id}`);
+	await waitText('Avaria da vistoria interna.');
+	assert(!(await text()).includes('Identificação e assinatura'));
+	assert(!(await text()).includes('Nova avaria'));
+	await page.waitForFunction(() => document.querySelector('.report .photo-tile img')?.naturalWidth > 0);
+	await page.emulateMediaType('print');
+	assert.equal(await page.$eval('.print-hidden', el => getComputedStyle(el).display), 'none');
+	await page.pdf({ path: path.join(output, 'internal-checklist-print.pdf'), format: 'A4', printBackground: true });
+	await page.emulateMediaType('screen');
+	await page.goto(base + '/dashboard');
+	await waitText('Você está offline');
+	await page.evaluate(() => {
+		window.__offline = false;
+		sessionStorage.removeItem('ui-offline');
+		dispatchEvent(new Event('online'));
+	});
+	await waitText('Nenhum envio pendente');
+	const internalSync = requests.find(r => r.path === '/api/checklists/sync' && r.body?.id === internalDraft.id);
+	assert.equal(internalSync.body.inspectionType, 'Interno');
+	assert.equal(internalSync.body.clientName, '');
+	assert.equal(internalSync.body.contactId, null);
+	assert.equal(internalSync.body.deliveryChecklistId, null);
+	assert.equal(internalSync.body.clientLicensePhoto, '');
+	assert.equal(internalSync.body.clientSignature, '');
+	assert.equal(internalSync.body.partStates.hood.photos.length, 1);
+	assert(Number.isFinite(internalSync.body.location.latitude));
+	await page.evaluate(report => {
+		sessionStorage.setItem('ui-internal-report', JSON.stringify(report));
+		sessionStorage.setItem('ui-synced-report', JSON.stringify(report));
+	}, internalSync.body);
+	await click('Ver histórico');
+	await page.waitForSelector(`a[href="/dashboard/checklists/${internalDraft.id}"]`);
+	await page.select('#history-type', 'Interno');
+	await page.waitForFunction(() => document.querySelectorAll('.inspection-row').length === 1);
+	await page.click(`a[href="/dashboard/checklists/${internalDraft.id}"]`);
+	await waitText('Avaria da vistoria interna.');
+	assert(!(await text()).includes('Identificação e assinatura'));
+	assert.deepEqual(errors, [], 'No browser runtime errors');
+	console.log('PASS internal inspection: entry point, fixed type, draft, mandatory location, offline completion, damage photo sync, history and print');
 	await writeFile(
 		path.join(output, 'results.json'),
 		JSON.stringify(

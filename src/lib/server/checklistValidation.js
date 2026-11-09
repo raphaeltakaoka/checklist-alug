@@ -93,7 +93,7 @@ function validatedPartEntries(value) {
   return partStateEntries(value);
 }
 
-function cleanPartStates(value, prefix) {
+function cleanPartStates(value, prefix, isInternal) {
   const result = {};
   let totalPhotos = 0;
   for (const [partId, state] of validatedPartEntries(value)) {
@@ -117,15 +117,15 @@ function cleanPartStates(value, prefix) {
     totalPhotos += state.photos.length;
     if (totalPhotos > 24) fail("Inspection contains too many photos.");
 
-    const isNewDamage = Boolean(state.isNewDamage);
+    const isNewDamage = !isInternal && Boolean(state.isNewDamage);
     const deliveryStatus =
-      typeof state.deliveryStatus === "string" && STATUSES.has(state.deliveryStatus)
+      !isInternal && typeof state.deliveryStatus === "string" && STATUSES.has(state.deliveryStatus)
         ? state.deliveryStatus
         : "";
-    const deliveryComments = string(state.deliveryComments ?? "", "delivery comments", 1000, {
+    const deliveryComments = string((isInternal ? "" : state.deliveryComments) ?? "", "delivery comments", 1000, {
       required: false,
     });
-    const deliveryPhotos = Array.isArray(state.deliveryPhotos)
+    const deliveryPhotos = !isInternal && Array.isArray(state.deliveryPhotos)
       ? state.deliveryPhotos
           .slice(0, 6)
           .map((url, idx) => httpsUrl(url, `delivery photo ${idx}`, false))
@@ -205,7 +205,8 @@ export function validateChecklistPayload(payload, ownerUid) {
   const prefix = `checklists/${ownerUid}/${id}/`;
   const inspectionDateTime = new Date(payload.inspectionDateTime);
   if (Number.isNaN(inspectionDateTime.getTime())) fail("Invalid inspection date.");
-  if (!["Entrega", "Devolução"].includes(payload.inspectionType)) fail("Invalid inspection type.");
+  if (!["Entrega", "Devolução", "Interno"].includes(payload.inspectionType)) fail("Invalid inspection type.");
+  const isInternal = payload.inspectionType === "Interno";
   if (!FUEL_LEVELS.has(payload.fuelLevel)) fail("Invalid fuel level.");
   for (const field of ["hasDocument", "hasChildSeat", "hasEToll"]) {
     if (typeof payload[field] !== "boolean") fail(`Invalid ${field}.`);
@@ -213,12 +214,12 @@ export function validateChecklistPayload(payload, ownerUid) {
   if (payload.status !== "completed" || payload.synced !== true) fail("Invalid sync status.");
 
   const deliveryChecklistId =
-    typeof payload.deliveryChecklistId === "string" && payload.deliveryChecklistId.length > 0
+    !isInternal && typeof payload.deliveryChecklistId === "string" && payload.deliveryChecklistId.length > 0
       ? string(payload.deliveryChecklistId, "deliveryChecklistId", 128)
       : null;
-  const deliverySnapshot = cleanDeliverySnapshot(payload.deliverySnapshot);
+  const deliverySnapshot = isInternal ? null : cleanDeliverySnapshot(payload.deliverySnapshot);
   const newDamageCount =
-    typeof payload.newDamageCount === "number" && payload.newDamageCount >= 0
+    !isInternal && typeof payload.newDamageCount === "number" && payload.newDamageCount >= 0
       ? payload.newDamageCount
       : 0;
 
@@ -230,11 +231,11 @@ export function validateChecklistPayload(payload, ownerUid) {
     licensePlate: string(payload.licensePlate, "license plate", 7).toUpperCase(),
     inspectionType: payload.inspectionType,
     inspectorName: string(payload.inspectorName, "inspector name", 120),
-    clientName: string(payload.clientName, "client name", 200),
+    clientName: isInternal ? "" : string(payload.clientName, "client name", 200),
     inspectionDateTime,
-    clientLicensePhoto: httpsUrl(payload.clientLicensePhoto, "license photo"),
+    clientLicensePhoto: isInternal ? "" : httpsUrl(payload.clientLicensePhoto, "license photo"),
     clientLicensePhotoPath:
-      payload.inspectionType === "Devolução" && !payload.clientLicensePhotoPath
+      isInternal || (payload.inspectionType === "Devolução" && !payload.clientLicensePhotoPath)
         ? ""
         : storagePath(
             payload.clientLicensePhotoPath || "",
@@ -242,8 +243,8 @@ export function validateChecklistPayload(payload, ownerUid) {
             prefix,
             payload.inspectionType !== "Devolução",
           ),
-    clientSignature: httpsUrl(payload.clientSignature, "signature"),
-    clientSignaturePath: storagePath(payload.clientSignaturePath, "signature path", prefix),
+    clientSignature: isInternal ? "" : httpsUrl(payload.clientSignature, "signature"),
+    clientSignaturePath: isInternal ? "" : storagePath(payload.clientSignaturePath, "signature path", prefix),
     carDiagramImage: httpsUrl(payload.carDiagramImage || "", "car diagram", false),
     carDiagramImagePath: storagePath(
       payload.carDiagramImagePath || "",
@@ -256,7 +257,7 @@ export function validateChecklistPayload(payload, ownerUid) {
     hasDocument: payload.hasDocument,
     hasChildSeat: payload.hasChildSeat,
     hasEToll: payload.hasEToll,
-    partStates: cleanPartStates(payload.partStates, prefix),
+    partStates: cleanPartStates(payload.partStates, prefix, isInternal),
     deliveryChecklistId,
     deliverySnapshot,
     newDamageCount,
@@ -265,9 +266,9 @@ export function validateChecklistPayload(payload, ownerUid) {
   };
   if (!/^[A-Z0-9]{7}$/.test(report.licensePlate)) fail("Invalid license plate.");
   report.carId = validateCarId(payload.carId);
-  report.contactId = validateContactId(payload.contactId);
-  report.clientSignatureName = string(payload.clientSignatureName, 'signature name', 200).trim();
-  if (!report.clientSignatureName) fail('Informe o nome de quem assina.');
+  report.contactId = isInternal ? null : validateContactId(payload.contactId);
+  report.clientSignatureName = isInternal ? "" : string(payload.clientSignatureName, 'signature name', 200).trim();
+  if (!isInternal && !report.clientSignatureName) fail('Informe o nome de quem assina.');
   // The sync transaction resolves the authoritative UID from contacts.
   report.clientUid = null;
   return report;

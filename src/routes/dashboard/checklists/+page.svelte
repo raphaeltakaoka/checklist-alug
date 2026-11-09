@@ -139,9 +139,12 @@
     <div class="field history-type">
       <label for="history-type">Tipo de vistoria</label>
       <select id="history-type" bind:value={type}
-        ><option value="All">Todos os tipos</option><option>Entrega</option><option>Devolução</option
-        ></select
       >
+        <option value="All">Todos os tipos</option>
+        <option>Entrega</option>
+        <option>Devolução</option>
+        <option>Interno</option>
+      </select>
     </div>
   </div>
   <Notice message={error} onretry={() => load()} />

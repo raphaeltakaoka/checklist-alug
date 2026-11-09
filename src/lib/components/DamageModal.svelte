@@ -6,7 +6,7 @@
   import Icon from "./Icon.svelte";
   import Notice from "./Notice.svelte";
   import Dialog from "./Dialog.svelte";
-  let { partId = $bindable(), partStates = $bindable(), partName = "" } = $props();
+  let { partId = $bindable(), partStates = $bindable(), partName = "", markNewDamage = true } = $props();
   let initial = getPartState(partStates, partId) || {
     status: "none",
     comments: "",
@@ -65,7 +65,7 @@
         status: finalStatus,
         comments,
         photos: [...photos],
-        isNewDamage: hasDeliveryDamage ? isNewDamage : finalStatus !== "none",
+        ...(markNewDamage ? { isNewDamage: hasDeliveryDamage ? isNewDamage : finalStatus !== "none" } : {}),
         deliveryStatus,
         deliveryComments,
         deliveryPhotos,

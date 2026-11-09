@@ -59,6 +59,7 @@ page.on('request', async request => {
 try {
 	await page.goto(`${base}/dashboard`);
 	await page.waitForSelector('a[href="/dashboard/new"]', { visible: true });
+	await page.waitForSelector('a[href="/dashboard/new?type=Interno"]', { visible: true });
 	await page.bringToFront();
 	await page.screenshot({ path: path.join(output, 'operations-profile-editor.png'), captureBeyondViewport: false });
 	await page.click('a[href="/dashboard/new"]');
@@ -74,7 +75,8 @@ try {
 	await page.reload();
 	await page.waitForSelector('input[aria-label="Buscar rascunhos e vistorias pendentes"]');
 	assert.equal(await page.$('a[href="/dashboard/new"]'), null);
-	await page.goto(`${base}/dashboard/new`);
+	assert.equal(await page.$('a[href="/dashboard/new?type=Interno"]'), null);
+	await page.goto(`${base}/dashboard/new?type=Interno`);
 	await page.waitForFunction(() => document.body.innerText.includes('Seu perfil não permite criar vistorias.'));
 	await page.click('a[href="/dashboard"]');
 	await page.waitForSelector('input[aria-label="Buscar rascunhos e vistorias pendentes"]');
