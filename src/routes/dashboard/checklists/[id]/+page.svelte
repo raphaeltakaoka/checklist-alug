@@ -9,9 +9,12 @@
 	import InspectionReport from '$lib/components/InspectionReport.svelte';
 	import Notice from '$lib/components/Notice.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
+	import InspectionEmailDialog from './InspectionEmailDialog.svelte';
 	let inspection = $state(null);
 	let loading = $state(true);
 	let error = $state('');
+	let emailOpen = $state(false);
+	let emailSent = $state(false);
 	let request = 0;
 	let canEdit = $derived(
 		inspection &&
@@ -19,10 +22,18 @@
 				(inspection.ownerUid === authState.user?.uid &&
 					authState.hasPermission('operations', 'write')))
 	);
+	let canEmail = $derived(
+		inspection &&
+			(authState.hasPermission('administrator', 'pdf') ||
+				(inspection.ownerUid === authState.user?.uid &&
+					authState.hasPermission('operations', 'pdf')))
+	);
 	async function load(id) {
 		const token = ++request;
 		loading = true;
 		error = '';
+		emailOpen = false;
+		emailSent = false;
 		try {
 			const snapshot = await getDoc(doc(db, 'checklists', id));
 			if (token === request)
@@ -70,10 +81,27 @@
 			message={error}
 			onretry={() => load(page.params.id)}
 		/>
-	{:else if inspection}<InspectionReport
+	{:else if inspection}
+		<Notice message={emailSent ? 'E-mail enviado com sucesso!' : ''} type="success" />
+		<InspectionReport
 			{inspection}
 			ondeletephoto={canEdit ? removePhoto : null}
+			onemail={() => {
+				emailSent = false;
+				emailOpen = true;
+			}}
+			emailDisabled={!canEmail}
 		/>
+		{#if emailOpen}
+			<InspectionEmailDialog
+				{inspection}
+				onclose={() => (emailOpen = false)}
+				onsent={() => {
+					emailOpen = false;
+					emailSent = true;
+				}}
+			/>
+		{/if}
 	{:else}<EmptyState
 			title="Laudo não encontrado"
 			description="Esta vistoria não está disponível no histórico."

@@ -119,6 +119,7 @@ const moduleRequests = [];
 // never try to evaluate JavaScript in a destroyed execution context.
 let failSync = true;
 let failMaps = false;
+let failEmail = false;
 page.on('pageerror', (error) => errors.push(error.message));
 page.on('dialog', dialog => dialog.accept());
 await page.evaluateOnNewDocument(
@@ -179,7 +180,7 @@ page.on('request', async (request) => {
 	if (url.pathname === '/src/lib/auth.svelte.js')
 		return js(
 			request,
-			`export const authState = { loading: false, user: { uid: '${ownerUid}', email: 'inspetor@example.test' }, displayName: 'Rafael Teste', hasPermission: (group, action) => group === 'operations' && ['read','write','create','update','delete'].includes(action), canInspect: (action) => ['read','write','create','update','delete'].includes(action) };`
+			`export const authState = { loading: false, user: { uid: '${ownerUid}', email: 'inspetor@example.test' }, displayName: 'Rafael Teste', hasPermission: (group, action) => group === 'operations' && ['read','write','create','update','delete','pdf'].includes(action), canInspect: (action) => ['read','write','create','update','delete','pdf'].includes(action) };`
 		);
 	if (url.pathname === '/src/lib/firebase.js')
 		return js(
@@ -279,6 +280,13 @@ page.on('request', async (request) => {
 		if (url.pathname.endsWith('/location-map')) {
 			if (failMaps) return json(request, { error: 'Mapa indisponível.' }, 503);
 			return request.respond({ status: 200, contentType: 'image/png', body: image });
+		}
+		if (url.pathname.endsWith('/email')) {
+			if (request.method() === 'GET') {
+				return json(request, { email: url.pathname.includes('/cloud-0/') ? 'cliente@example.test' : '' });
+			}
+			if (failEmail) return json(request, { error: 'Falha de envio de e-mail simulada.' }, 502);
+			return json(request, { success: true });
 		}
 		if (url.pathname.endsWith('/photos')) {
 			return json(request, { partStates: {
@@ -952,22 +960,25 @@ try {
 	assert.equal(await page.$('[aria-label="Origem do histórico"]'), null, 'History no longer has a cloud/device selector');
 	await captureAt(1440, 'history-desktop');
 	await captureAt(390, 'history-mobile');
-	assert.equal(await page.$('input[type=search]'), null, 'History only uses the shared plate lookup');
 	const historyLookupCount = carLookups().length;
-	await page.type('#history-plate', 'xy');
+	const historyReads = () => page.evaluate(() => window.__fixtureReads.filter(q => q.name === 'checklist_summaries'));
+	const initialReads = (await historyReads()).length;
+	await page.type('#history-plate', 'xyz');
+	await click('Buscar');
+	await waitText('Informe os 7 caracteres da placa.');
+	assert.equal((await historyReads()).length, initialReads, 'An incomplete plate does not query Firestore');
+	await page.type('#history-plate', '-9a87');
 	await new Promise(resolve => setTimeout(resolve, 400));
-	assert.equal(carLookups().length, historyLookupCount, 'History must not search below three characters');
-	await page.type('#history-plate', 'z');
-	await page.waitForSelector('#history-plate-option-0', { visible: true });
-	assert.equal(carLookups().length, historyLookupCount + 1, 'History reuses the debounced three-character car lookup');
-	await page.keyboard.press('ArrowDown');
-	await page.keyboard.press('Enter');
+	assert.equal(carLookups().length, historyLookupCount, 'History does not consult the vehicle catalog');
+	assert.equal((await historyReads()).length, initialReads, 'Typing a complete plate does not query Firestore');
+	await waitText('20 carregadas');
+	await click('Buscar');
 	await waitText('2 carregadas');
 	assert.equal(await page.$eval('#history-plate', el => el.value), 'XYZ9A87');
 	assert.deepEqual(await page.$$eval('.inspection-list a.inspection-link', links => links.map(el => el.getAttribute('href'))), [
 		'/dashboard/checklists/plate-new', '/dashboard/checklists/plate-old'
-	], 'Selecting a plate finds older records outside the first page and sorts newest first');
-	const plateQuery = await page.evaluate(() => window.__fixtureReads.filter(q => q.name === 'checklist_summaries').at(-1));
+	], 'Submitting a plate finds older records outside the first page and sorts newest first');
+	const plateQuery = (await historyReads()).at(-1);
 	assert(plateQuery.constraints.some(c => c.where?.[0] === 'licensePlate' && c.where[2] === 'XYZ9A87'));
 	assert(plateQuery.constraints.some(c => c.where?.[0] === 'ownerUid' && c.where[2] === 'ui-test-inspector'), 'Plate filtering preserves owner isolation');
 	await captureAt(390, 'history-plate-mobile');
@@ -976,19 +987,16 @@ try {
 	await click('Limpar filtros');
 	await waitText('20 carregadas');
 	assert.equal(await page.$eval('#history-plate', el => el.value), '');
-	await page.type('#history-plate', 'ZZZ');
-	await waitText('Nenhum veículo encontrado para esta placa');
-	await click('Limpar filtros');
-	await page.waitForFunction(() => document.getElementById('history-plate').value === '');
-	await page.type('#history-plate', 'FAL');
-	await waitText('Não foi possível buscar veículos');
+	await page.type('#history-plate', 'ZZZ9Z98');
+	await click('Buscar');
+	await waitText('Nenhuma vistoria encontrada');
 	await click('Limpar filtros');
 	await page.waitForFunction(() => document.getElementById('history-plate').value === '');
 	await page.evaluate(() => { window.__delayHistory = true; });
-	await page.type('#history-plate', 'xyz');
-	await page.waitForSelector('#history-plate-option-0', { visible: true });
-	await page.click('#history-plate-option-0');
-	await click('Limpar placa');
+	await page.type('#history-plate', 'xyz9a87');
+	await click('Buscar');
+	await page.waitForSelector('[aria-label="Carregando histórico"]');
+	await click('Limpar filtros');
 	await waitText('20 carregadas');
 	await new Promise(resolve => setTimeout(resolve, 650));
 	assert(!(await text()).includes('XYZ9A87'), 'Clearing a plate ignores late history results');
@@ -1026,6 +1034,7 @@ try {
 	}, fixtureReport);
 	await page.goto(base + '/dashboard/new/ui-local-report');
 	await waitText('Laudo de vistoria');
+	await waitText('Imprimir');
 	assert.equal(await page.$eval('main a.text-action', el => el.getAttribute('href')), '/dashboard', 'Local reports return to the dashboard');
 	await captureAt(390, 'report-mobile');
 	await page.emulateMediaType('print');
@@ -1049,6 +1058,19 @@ try {
 	await click('Cancelar');
 	await page.goto(base + '/dashboard/checklists/cloud-0');
 	await waitText('Laudo de vistoria');
+	assert(!(await text()).includes('Imprimir'), 'Synced history uses the e-mail action');
+	await click('Enviar por e-mail');
+	await page.waitForFunction(() => document.querySelector('dialog input[type=email]')?.value === 'cliente@example.test');
+	await captureAt(390, 'history-email-mobile');
+	await page.locator('dialog input[type=email]').fill('editado@example.test');
+	failEmail = true;
+	await click('Enviar e-mail');
+	await waitText('Falha de envio de e-mail simulada.');
+	assert.equal(await page.$eval('dialog input[type=email]', el => el.value), 'editado@example.test');
+	failEmail = false;
+	await click('Enviar e-mail');
+	await waitText('E-mail enviado com sucesso!');
+	assert.equal(requests.filter(r => r.method === 'POST' && r.path === '/api/checklists/cloud-0/email').at(-1).body.to, 'editado@example.test');
 	await page.click('button[aria-label="Ampliar foto 1 de Vidros — Parabrisa"]');
 	await click('Excluir foto');
 	await click('Excluir');
@@ -1059,7 +1081,7 @@ try {
 	}), null, 'Editing a cloud report does not recreate an offline copy');
 	await noOverflow();
 	console.log(
-		'PASS history: shared plate lookup, three-character threshold, selection, full plate history, newest-first ordering, owner isolation, clearing, stale results, empty/error states, pagination and offline reconnection; dashboard draft resume and reports'
+		'PASS history: submit-only plate query, full plate history, newest-first ordering, owner isolation, clearing, stale results, empty/error states, pagination, offline reconnection and report e-mail'
 	);
 	await click('Tarefas');
 	await waitText('Entrega — Mariana Costa');
@@ -1293,8 +1315,15 @@ try {
 	await page.click(`a[href="/dashboard/checklists/${internalDraft.id}"]`);
 	await waitText('Avaria da vistoria interna.');
 	assert(!(await text()).includes('Identificação e assinatura'));
+	await click('Enviar por e-mail');
+	await page.waitForSelector('dialog input[type=email]:enabled');
+	assert.equal(await page.$eval('dialog input[type=email]', el => el.value), '');
+	await page.type('dialog input[type=email]', 'interno@example.test');
+	await click('Enviar e-mail');
+	await waitText('E-mail enviado com sucesso!');
+	assert.equal(requests.find(r => r.method === 'POST' && r.path === `/api/checklists/${internalDraft.id}/email`).body.to, 'interno@example.test');
 	assert.deepEqual(errors, [], 'No browser runtime errors');
-	console.log('PASS internal inspection: entry point, fixed type, draft, mandatory location, offline completion, damage photo sync, history and print');
+	console.log('PASS internal inspection: entry point, fixed type, draft, mandatory location, offline completion, damage photo sync, history and manually addressed e-mail');
 	await writeFile(
 		path.join(output, 'results.json'),
 		JSON.stringify(

@@ -13,7 +13,6 @@
   import { authState } from "$lib/auth.svelte.js";
   import { normalizeCloudInspection } from "$lib/inspection.js";
   import { normalizePlate } from '$lib/cars.js';
-  import CarPlateField from '$lib/components/CarPlateField.svelte';
   import Notice from "$lib/components/Notice.svelte";
   import EmptyState from "$lib/components/EmptyState.svelte";
   import InspectionRow from "$lib/components/InspectionRow.svelte";
@@ -25,7 +24,7 @@
   let lastDocument = null;
   let hasMore = $state(true);
   let plate = $state('');
-  let carId = $state(null);
+  let plateError = $state('');
   let selectedPlate = $state('');
   let type = $state("All");
   let request = 0;
@@ -86,16 +85,21 @@
       }
     }
   }
-  function selectPlate(car) {
-    plate = normalizePlate(car.plate);
-    carId = car.id;
-    selectedPlate = plate;
+  function searchPlate(event) {
+    event.preventDefault();
+    const normalized = normalizePlate(plate);
+    if (normalized.length !== 7) {
+      plateError = 'Informe os 7 caracteres da placa.';
+      return;
+    }
+    plate = normalized;
+    selectedPlate = normalized;
     load();
   }
   function clearPlate() {
     const wasFiltered = !!selectedPlate;
     plate = '';
-    carId = null;
+    plateError = '';
     selectedPlate = '';
     if (wasFiltered) load();
   }
@@ -123,19 +127,30 @@
     <div>
       <div class="eyebrow">Registro de vistorias</div>
       <h1>Histórico</h1>
-      <p>Encontre uma vistoria, consulte os detalhes e imprima o laudo.</p>
+      <p>Encontre uma vistoria, consulte os detalhes e envie o laudo por e-mail.</p>
     </div>
   </div>
   <div class="toolbar section">
-    <div class="history-plate">
-      <CarPlateField
-        mode="history"
-        bind:plate
-        {carId}
-        onSelect={selectPlate}
-        onClear={clearPlate}
-      />
-    </div>
+    <form class="field history-plate" role="search" onsubmit={searchPlate}>
+      <label for="history-plate">Placa do veículo</label>
+      <div class="plate-search">
+        <input
+          id="history-plate"
+          type="search"
+          placeholder="ABC1D23"
+          maxlength="8"
+          autocapitalize="characters"
+          autocomplete="off"
+          spellcheck="false"
+          aria-invalid={!!plateError}
+          aria-describedby={plateError ? 'history-plate-error' : undefined}
+          bind:value={plate}
+          oninput={() => (plateError = '')}
+        />
+        <button class="btn primary" type="submit">Buscar</button>
+      </div>
+      {#if plateError}<span id="history-plate-error" class="field-error" role="alert">{plateError}</span>{/if}
+    </form>
     <div class="field history-type">
       <label for="history-type">Tipo de vistoria</label>
       <select id="history-type" bind:value={type}
@@ -148,23 +163,24 @@
     </div>
   </div>
   <Notice message={error} onretry={() => load()} />
+  <div class="section-heading">
+    <span class="muted">
+      {#if !loading}
+        {filtered.length} {filtered.length === 1 ? "vistoria encontrada" : "vistorias encontradas"}
+        entre {records.length} carregadas{selectedPlate ? ` para ${selectedPlate}` : ''}
+      {/if}
+    </span>
+    {#if plate || plateError || selectedPlate || type !== "All"}
+      <button class="text-action" onclick={() => {
+        clearPlate();
+        type = "All";
+      }}>Limpar filtros</button>
+    {/if}
+  </div>
   {#if loading}<div class="panel" role="status" aria-label="Carregando histórico">
-      {#each [1, 2, 3] as i}<div class="skeleton"></div>{/each}
+      {#each [1, 2, 3] as i (i)}<div class="skeleton"></div>{/each}
     </div>
   {:else}
-    <div class="section-heading">
-      <span class="muted"
-        >{filtered.length}
-        {filtered.length === 1 ? "vistoria encontrada" : "vistorias encontradas"}
-        entre {records.length} carregadas</span
-      >{#if plate || type !== "All"}<button
-          class="text-action"
-          onclick={() => {
-            clearPlate();
-            type = "All";
-          }}>Limpar filtros</button
-        >{/if}
-    </div>
     {#if filtered.length}<div class="panel inspection-list">
         {#each filtered as record (record.id)}<InspectionRow
             inspection={record}
@@ -193,6 +209,8 @@
 <style>
   .toolbar { align-items: flex-start; }
   .history-plate { flex: 1; min-width: 0; }
+  .plate-search { display: flex; gap: 8px; }
+  .plate-search input { min-width: 0; }
   @media (max-width: 699px) {
     .history-plate { flex-basis: 100%; }
     .history-type { width: 100%; }

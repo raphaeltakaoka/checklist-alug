@@ -23,6 +23,8 @@
     backHref = "/dashboard/checklists",
     ondelete = null,
     ondeletephoto = null,
+    onemail = null,
+    emailDisabled = false,
   } = $props();
   let preview = $state(null);
   let confirm = $state(null);
@@ -78,9 +80,16 @@
         <Icon name="plus" size={17} />Fazer devolução
       </a>
     {/if}
-    <button class="btn" onclick={() => window.print()}
-      ><Icon name="print" size={18} />Imprimir</button
-    >{#if ondelete}<button
+    {#if onemail}
+      <button class="btn" onclick={onemail} disabled={emailDisabled}>
+        <Icon name="mail" size={18} />Enviar por e-mail
+      </button>
+    {:else}
+      <button class="btn" onclick={() => window.print()}>
+        <Icon name="print" size={18} />Imprimir
+      </button>
+    {/if}
+    {#if ondelete}<button
         class="icon-button"
         aria-label="Excluir vistoria"
         onclick={() => {

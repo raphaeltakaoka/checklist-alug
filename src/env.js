@@ -12,5 +12,11 @@ export const variables = defineEnvVars({
 	// Admin credentials are private and read from the server environment at runtime.
 	FIREBASE_SERVICE_ACCOUNT: {},
 	FIREBASE_STORAGE_BUCKET: {},
-	GEOAPIFY_API_KEY: { schema: value => value ?? '' }
+	GEOAPIFY_API_KEY: { schema: value => value ?? '' },
+	CRM_BASE_URL: { schema: value => value ?? '' },
+	GMAIL_SMTP_USER: { schema: value => value ?? '' },
+	GMAIL_SMTP_APP_PASSWORD: { schema: value => value ?? '' },
+	GMAIL_FROM_NAME: { schema: value => value ?? '' },
+	GMAIL_FROM_EMAIL: { schema: value => value ?? '' },
+	GMAIL_REPLY_TO: { schema: value => value ?? '' }
 });

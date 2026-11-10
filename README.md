@@ -14,6 +14,13 @@ TypeScript stays on 6.x to satisfy SvelteKit 3 and `svelte-check` peer dependenc
 3. Set `FIREBASE_SERVICE_ACCOUNT` only in trusted server environments. Never expose it through a `PUBLIC_` variable.
 4. Run `npm run dev`.
 
+To enable **Enviar por e-mail** in inspection history, set the private runtime
+variable `CRM_BASE_URL` to the HTTPS origin of the CRM that shares this Checklist
+environment's Firebase project. Configure `GMAIL_SMTP_USER` and
+`GMAIL_SMTP_APP_PASSWORD` with the same Google Workspace SMTP settings as the CRM.
+`GMAIL_FROM_NAME`, `GMAIL_FROM_EMAIL` and `GMAIL_REPLY_TO` are optional. Sending
+requires read and PDF permission for the inspection.
+
 The public Firebase and VAPID values are declared with `public: true` and `static: true`
 in `src/env.js`, preserving their `PUBLIC_*` names and embedding them in the browser
 bundle. Server credentials remain private runtime variables. Authorization is enforced with Firebase ID tokens, server-side permission checks, Firestore rules, and Storage rules—not by hiding those public identifiers.
@@ -49,11 +56,10 @@ Failed uploads stay on the device for retry. Previously retained synced copies a
 removed when the owner reads local history or opens a local report. Synced reports
 remain available through the cloud history; photo edits do not recreate local copies.
 
-History reuses the inspection vehicle picker: plate suggestions start after three
-characters. Selecting a vehicle queries its plate across all checklist summaries,
-preserves the inspector's owner filter, and sorts the matching reports newest first.
-The plate query uses equality filters without a date ordering clause, so it does
-not require a new composite index. Clearing the plate restores the paginated history.
+History opens with the 20 most recent accessible inspections. Submitting a full
+plate with **Buscar** queries all matching checklist summaries, preserves the
+inspector's owner filter, and sorts results newest first. The equality query uses
+the existing indexes. Clearing the filters restores the paginated history.
 
 New inspections use `schemaVersion: 5` and require a registered contact and vehicle.
 `carId` stores the `cars` document ID. `contactId` stores the
