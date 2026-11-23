@@ -1,8 +1,55 @@
 <script>
+  import { flushSync } from 'svelte';
+  import { on } from 'svelte/events';
   import { PART_NAMES, countDamages } from '$lib/inspection.js';
   // Svelte 5 Runes for properties
   let { activePart = $bindable(), partStates = {} } = $props();
   let svgElement;
+  let viewport;
+  let zoom = $state(1);
+  const maxZoom = 3;
+
+  function placeZoom(scale, anchorX, anchorY, x, y) {
+    flushSync(() => { zoom = Math.max(1, Math.min(maxZoom, scale)); });
+    viewport.scrollLeft = anchorX * zoom - x;
+    viewport.scrollTop = anchorY * zoom - y;
+  }
+
+  function zoomBy(amount) {
+    const x = viewport.clientWidth / 2;
+    const y = viewport.clientHeight / 2;
+    placeZoom(zoom + amount, (viewport.scrollLeft + x) / zoom, (viewport.scrollTop + y) / zoom, x, y);
+  }
+
+  function pinchZoom(node) {
+    let pinch;
+    function handleTouches(event) {
+      if (event.touches.length !== 2) {
+        pinch = null;
+        return;
+      }
+      event.preventDefault();
+      const [a, b] = event.touches;
+      const distance = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+      const rect = node.getBoundingClientRect();
+      const x = (a.clientX + b.clientX) / 2 - rect.left;
+      const y = (a.clientY + b.clientY) / 2 - rect.top;
+      if (!distance) return;
+      if (!pinch) {
+        pinch = {
+          distance, zoom,
+          anchorX: (node.scrollLeft + x) / zoom,
+          anchorY: (node.scrollTop + y) / zoom
+        };
+      } else {
+        placeZoom(pinch.zoom * distance / pinch.distance, pinch.anchorX, pinch.anchorY, x, y);
+      }
+    }
+    const cleanup = ['touchstart', 'touchmove', 'touchend', 'touchcancel'].map(type =>
+      on(node, type, handleTouches, { passive: false })
+    );
+    return () => cleanup.forEach(remove => remove());
+  }
 
   export function capture() {
     if (!svgElement || typeof window === "undefined") return null;
@@ -69,9 +116,15 @@
   class="w-full flex flex-col lg:flex-row items-stretch lg:items-start justify-center gap-6 lg:gap-10 p-0 bg-transparent border-transparent shadow-none"
 >
   <!-- Visual Blueprint (SVG) -->
-  <div class="relative w-full max-w-55 aspect-2/5 p-0 flex items-center justify-center mx-auto">
+  <div class="w-full min-w-0 max-w-96 mx-auto">
+    <div class="flex items-center justify-center gap-3 mb-2">
+      <button class="icon-button" type="button" aria-label="Reduzir diagrama" disabled={zoom <= 1} onclick={() => zoomBy(-0.5)}>−</button>
+      <span class="tabular-nums">{Math.round(zoom * 100)}%</span>
+      <button class="icon-button" type="button" aria-label="Ampliar diagrama" disabled={zoom >= maxZoom} onclick={() => zoomBy(0.5)}>+</button>
+    </div>
+    <div bind:this={viewport} {@attach pinchZoom} class="diagram-viewport aspect-2/5 overflow-auto">
     <!-- Dynamic Interactive Car SVG Outline -->
-    <svg bind:this={svgElement} viewBox="20 0 160 400" class="w-full h-full select-none">
+    <svg bind:this={svgElement} viewBox="20 0 160 400" style:width={zoom * 100 + '%'} class="block max-w-none h-auto select-none">
       <!-- Main Car Chassis Body Shadow -->
       <rect
         x="35"
@@ -161,7 +214,7 @@
 
       <!-- Hood -->
       <path
-        d="M 48,42 L 152,42 C 158,80 155,100 148,110 L 52,110 C 45,100 42,80 48,42 Z"
+        d="M 60,42 L 140,42 C 146,80 146,100 148,110 L 52,110 C 54,100 54,80 60,42 Z"
         class="transition-colors duration-300 cursor-pointer focus:outline-none focus:stroke-blue-500 {getSVGPartColor(
           'hood',
         )} {activePart === 'hood' ? 'stroke-blue-500 stroke-[2px]' : 'stroke-1'}"
@@ -191,7 +244,7 @@
 
       <!-- Trunk -->
       <path
-        d="M 48,252 L 152,252 C 158,285 155,300 148,320 L 52,320 C 45,300 42,285 48,252 Z"
+        d="M 58,252 L 142,252 C 138,270 138,298 138,320 L 62,320 C 62,298 62,270 58,252 Z"
         class="transition-colors duration-300 cursor-pointer focus:outline-none focus:stroke-blue-500 {getSVGPartColor(
           'trunk',
         )} {activePart === 'trunk' ? 'stroke-blue-500 stroke-[2px]' : 'stroke-1'}"
@@ -218,7 +271,7 @@
       <!-- Left Side Panels -->
       <!-- Front Fender -->
       <path
-        d="M 38,40 C 36,60 36,80 38,98 L 44,98 C 42,80 44,55 46,40 Z"
+        d="M 38,40 C 36,60 36,80 38,98 L 52,98 C 52,80 54,55 58,40 Z"
         class="transition-colors duration-300 cursor-pointer focus:outline-none focus:stroke-blue-500 {getSVGPartColor(
           'left_fender',
         )} {activePart === 'left_fender' ? 'stroke-blue-500 stroke-[2px]' : 'stroke-1'}"
@@ -257,7 +310,7 @@
 
       <!-- Rear Quarter -->
       <path
-        d="M 38,232 C 36,252 36,280 38,320 L 46,320 C 44,285 44,250 48,232 Z"
+        d="M 38,232 C 36,252 38,280 38,320 L 59,320 C 59,298 59,270 55,254 Q 48,248 48,242 L 48,232 Z"
         class="transition-colors duration-300 cursor-pointer focus:outline-none focus:stroke-blue-500 {getSVGPartColor(
           'left_rear_quarter',
         )} {activePart === 'left_rear_quarter' ? 'stroke-blue-500 stroke-[2px]' : 'stroke-1'}"
@@ -271,7 +324,7 @@
       <!-- Right Side Panels -->
       <!-- Front Fender -->
       <path
-        d="M 162,40 C 164,60 164,80 162,98 L 156,98 C 158,80 156,55 154,40 Z"
+        d="M 162,40 C 164,60 164,80 162,98 L 148,98 C 148,80 146,55 142,40 Z"
         class="transition-colors duration-300 cursor-pointer focus:outline-none focus:stroke-blue-500 {getSVGPartColor(
           'right_fender',
         )} {activePart === 'right_fender' ? 'stroke-blue-500 stroke-[2px]' : 'stroke-1'}"
@@ -310,7 +363,7 @@
 
       <!-- Rear Quarter -->
       <path
-        d="M 162,232 C 164,252 164,280 162,320 L 154,320 C 156,285 156,250 152,232 Z"
+        d="M 162,232 C 164,252 162,280 162,320 L 141,320 C 141,298 141,270 145,254 Q 152,248 152,242 L 152,232 Z"
         class="transition-colors duration-300 cursor-pointer focus:outline-none focus:stroke-blue-500 {getSVGPartColor(
           'right_rear_quarter',
         )} {activePart === 'right_rear_quarter' ? 'stroke-blue-500 stroke-[2px]' : 'stroke-1'}"
@@ -341,6 +394,7 @@
         pointer-events="none">TRASEIRA</text
       >
     </svg>
+    </div>
   </div>
 
   <div class="flex flex-col gap-3 lg:min-w-48">
@@ -357,6 +411,9 @@
 </div>
 
 <style>
+  .diagram-viewport {
+    touch-action: pan-x pan-y;
+  }
   .damage-category {
     justify-content: space-between;
     gap: 12px;

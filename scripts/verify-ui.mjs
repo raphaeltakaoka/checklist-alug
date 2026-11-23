@@ -587,6 +587,45 @@ try {
 		}), 'Glass stays directly below cabin at both viewport sizes');
 	}
 	await page.setViewport({ ...page.viewport(), width: 390, height: 844 });
+	const leftFender = 'svg [aria-label="Paralama Diant. Esq."]';
+	const diagramWidth = () => page.$eval(leftFender, el => el.ownerSVGElement.getBoundingClientRect().width);
+	const initialWidth = await diagramWidth();
+	assert(initialWidth > 220, 'The diagram uses the available mobile width');
+	const center = await page.$eval(leftFender, el => {
+		el.scrollIntoView({ block: 'center' });
+		const rect = el.getBoundingClientRect();
+		return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+	});
+	const touchSession = await page.createCDPSession();
+	for (const [type, radius] of [['touchStart', 20], ['touchMove', 30], ['touchMove', 40], ['touchEnd', 0]]) {
+		await touchSession.send('Input.dispatchTouchEvent', { type, touchPoints: radius ? [
+			{ id: 1, x: center.x, y: center.y - radius },
+			{ id: 2, x: center.x, y: center.y + radius }
+		] : [] });
+	}
+	await touchSession.detach();
+	assert((await diagramWidth()) >= initialWidth * 1.9, 'Pinching enlarges the car');
+	assert.equal(await page.evaluate(() => visualViewport.scale), 1, 'Pinching the car keeps the page at normal scale');
+	assert.equal(await page.$('dialog[open]'), null, 'Pinching does not select a part');
+	for (const [label, x] of [['Lateral Tras. Esq.', 54], ['Lateral Tras. Dir.', 146]]) {
+		assert(await page.$eval(`svg [aria-label="${label}"]`, (el, x) =>
+			el.isPointInFill(new DOMPoint(x, 290)), x), 'The widened area belongs to the rear panel');
+	}
+	for (const label of ['Paralama Diant. Esq.', 'Paralama Diant. Dir.', 'Lateral Tras. Esq.', 'Lateral Tras. Dir.']) {
+		const part = await page.$(`svg [aria-label="${label}"]`);
+		await part.evaluate(el => el.scrollIntoView({ block: 'center', inline: 'center' }));
+		await part.tap();
+		await page.waitForSelector('dialog[open]');
+		assert.equal(await page.$eval('dialog h2', el => el.textContent), label);
+		assert(await page.$eval('dialog[open]', el => {
+			const rect = el.getBoundingClientRect();
+			return rect.top >= 0 && rect.left >= 0 &&
+				rect.bottom <= visualViewport.height + 1 && rect.right <= visualViewport.width + 1;
+		}), 'The damage form fits the mobile viewport while the map is enlarged');
+		await click('Cancelar');
+		await page.waitForFunction(() => !document.querySelector('dialog'));
+	}
+	console.log('PASS mobile damage map: pinch zoom, front fenders, rear quarter panels and full dialog');
 	await page.$eval('svg [aria-label="Teto"]', el => el.focus());
 	await page.keyboard.press('Enter');
 	await page.waitForSelector('dialog[open]');
