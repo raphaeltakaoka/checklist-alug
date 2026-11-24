@@ -12,6 +12,7 @@
 		children,
 		footer = null,
 		wide = false,
+		fullscreen = false,
 		busy = false
 	} = $props();
 	let dialog;
@@ -39,6 +40,7 @@
 	bind:this={dialog}
 	class="app-dialog"
 	class:wide
+	class:fullscreen
 	aria-labelledby={titleId}
 	oncancel={requestClose}
 	onclick={(event) => {

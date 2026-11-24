@@ -57,20 +57,7 @@ export function compressImage(
       ctx.drawImage(img, 0, 0, width, height);
 
 			try {
-				let currentQuality = Math.min(0.92, Math.max(0.45, quality));
-				let output = null;
-				while (currentQuality >= 0.45) {
-					output = await new Promise((resolveBlob) =>
-						canvas.toBlob(resolveBlob, 'image/jpeg', currentQuality),
-					);
-					if (!output) throw new Error('Não foi possível codificar a imagem.');
-					if (output.size <= maxBytes) break;
-					currentQuality -= 0.1;
-				}
-				if (!output || output.size > maxBytes) {
-					throw new Error('A imagem não pôde ser reduzida ao tamanho permitido.');
-				}
-				resolve(output);
+        resolve(await encodePhotoCanvas(canvas, quality, maxBytes));
 			} catch (error) {
 				reject(error);
 			} finally {
@@ -85,4 +72,15 @@ export function compressImage(
 
     img.src = objectUrl;
   });
+}
+
+export async function encodePhotoCanvas(canvas, quality = 0.82, maxBytes = 1_500_000) {
+  let currentQuality = Math.min(0.92, Math.max(0.45, quality));
+  while (currentQuality >= 0.45) {
+    const image = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', currentQuality));
+    if (!image) throw new Error('Não foi possível codificar a imagem.');
+    if (image.size <= maxBytes) return image;
+    currentQuality -= 0.1;
+  }
+  throw new Error('A imagem não pôde ser reduzida ao tamanho permitido.');
 }

@@ -45,6 +45,7 @@
   import Dialog from "$lib/components/Dialog.svelte";
   import CarDiagram from "$lib/components/CarDiagram.svelte";
   import DamageItemsModal from '$lib/components/DamageItemsModal.svelte';
+  import PhotoEditor from '$lib/components/PhotoEditor.svelte';
   import DamageModal from "$lib/components/DamageModal.svelte";
   import SignaturePad from "$lib/components/SignaturePad.svelte";
   import InspectionLocation from '$lib/components/InspectionLocation.svelte';
@@ -87,6 +88,7 @@
   let storageWarning = $state("");
   let busy = $state(false);
   let processing = $state(false);
+  let licensePreviewOpen = $state(false);
   let photoError = $state("");
   let activePart = $state(null);
   let damageView = $state("map");
@@ -1074,11 +1076,12 @@
                 <span class="field-label" id="license-label">Foto da CNH *</span><Notice
                   message={photoError}
                 />
-                {#if report.clientLicensePhoto}<img
+                {#if report.clientLicensePhoto}<button type="button" aria-label="Ampliar foto da CNH"
+                    disabled={processing} onclick={() => licensePreviewOpen = true}><img
                     class="upload-preview"
                     src={mediaPreviewUrl(report.clientLicensePhoto)}
                     alt="CNH do cliente"
-                  />{/if}
+                  /></button>{/if}
                 {#if report.deliverySnapshot?.clientLicensePhoto && report.clientLicensePhoto === report.deliverySnapshot.clientLicensePhoto}
                   <p class="field-help" style="color:#15803d">
                     Foto da CNH reutilizada da entrega. Clique em "Refazer foto" ou "Galeria" se for
@@ -1182,6 +1185,14 @@
     </div>
   {/if}
 </main>
+{#if licensePreviewOpen}
+  <PhotoEditor photo={report.clientLicensePhoto} title="Foto da CNH" onclose={() => licensePreviewOpen = false}
+    onsave={report.clientLicensePhoto === report.deliverySnapshot?.clientLicensePhoto ? undefined : (image) => {
+      revokeMediaPreview(report.clientLicensePhoto);
+      report.clientLicensePhoto = image;
+      licensePreviewOpen = false;
+    }} />
+{/if}
 {#if isItemCategory(activePart)}
   <DamageItemsModal bind:category={activePart} bind:partStates={report.partStates} markNewDamage={!isInternal} />
 {:else if activePart}<DamageModal

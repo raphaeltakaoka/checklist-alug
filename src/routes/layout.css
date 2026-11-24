@@ -629,6 +629,19 @@ textarea[aria-invalid="true"] {
 .app-dialog.wide {
   width: min(800px, calc(100% - 40px));
 }
+.app-dialog.fullscreen {
+  width: 100%;
+  height: 100dvh;
+  max-height: none;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+}
+.app-dialog.fullscreen .dialog-body {
+  flex: 1;
+  min-height: 0;
+  padding: 0;
+}
 .app-dialog::backdrop {
   background: #15251bbb;
 }

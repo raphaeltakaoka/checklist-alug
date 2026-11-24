@@ -5,6 +5,7 @@
   import { STATUS_LABELS, isItemCategory, partCategory, partStateEntries, getPartState, setPartState } from '$lib/inspection.js';
   import Icon from "./Icon.svelte";
   import Notice from "./Notice.svelte";
+  import PhotoEditor from './PhotoEditor.svelte';
   import Dialog from "./Dialog.svelte";
   let { partId = $bindable(), partStates = $bindable(), partName = "", markNewDamage = true } = $props();
   let initial = getPartState(partStates, partId) || {
@@ -137,7 +138,7 @@
                 <button
                   type="button"
                   aria-label={`Ampliar foto ${idx + 1} da entrega`}
-                  onclick={() => (preview = photo)}
+                  onclick={() => (preview = { photo })}
                 >
                   <img src={mediaPreviewUrl(photo)} alt="Foto da entrega" />
                 </button>
@@ -207,8 +208,8 @@
       <div class="field">
         <span class="field-label">Fotos da avaria no retorno · {photos.length}/6</span>
         {#if photos.length}<div class="photo-grid">
-            {#each photos as photo, index (photo)}<div class="photo-tile">
-                <button aria-label={`Ampliar foto ${index + 1}`} onclick={() => (preview = photo)}
+            {#each photos as photo, index (index)}<div class="photo-tile">
+                <button type="button" disabled={processing} aria-label={`Ampliar e marcar foto ${index + 1}`} onclick={() => (preview = { photo, index })}
                   ><img
                     src={mediaPreviewUrl(photo)}
                     alt={`Foto ${index + 1} de ${partName}`}
@@ -274,10 +275,13 @@
       ><button class="btn danger" onclick={() => (partId = null)}>Descartar</button
       >{/snippet}</Dialog
   >{/if}
-{#if preview}<Dialog title="Foto do dano" wide onclose={() => (preview = null)}
-    ><img
-      class="preview-image"
-      src={mediaPreviewUrl(preview)}
-      alt={`Detalhe de ${partName}`}
-    /></Dialog
-  >{/if}
+{#if preview}
+  <PhotoEditor photo={preview.photo} title={`Foto de ${partName}`}
+    onclose={() => (preview = null)}
+    onsave={preview.index == null ? undefined : (image) => {
+      revokeMediaPreview(photos[preview.index]);
+      photos[preview.index] = image;
+      dirty = true;
+      preview = null;
+    }} />
+{/if}
