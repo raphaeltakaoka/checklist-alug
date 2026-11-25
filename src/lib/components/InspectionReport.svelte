@@ -13,11 +13,13 @@
     detectNewDamages,
     formatInspectionDateTime,
   } from "$lib/inspection.js";
+  import { ACCESSORY_STATUS_LABELS, INSPECTION_ACCESSORIES } from '$lib/inspectionAccessories.js';
   import logo from "$lib/assets/logo_alug_locadora.png";
   import Icon from "./Icon.svelte";
   import Notice from "./Notice.svelte";
   import Dialog from "./Dialog.svelte";
   import InspectionLocation from './InspectionLocation.svelte';
+  import InteriorItemComparison from './InteriorItemComparison.svelte';
   let {
     inspection,
     backHref = "/dashboard/checklists",
@@ -30,6 +32,12 @@
   let confirm = $state(null);
   let busy = $state(false);
   let error = $state("");
+  let presentItems = $derived([
+    inspection.hasDocument && 'Documento',
+    inspection.hasChildSeat && 'Cadeirinha',
+    inspection.hasEToll && 'Tag de pedágio',
+  ].filter(Boolean));
+  let accessoryAnswers = $derived(Object.entries(INSPECTION_ACCESSORIES).filter(([id]) => inspection.accessoryStates?.[id]));
   let parts = $derived(
     partStateEntries(inspection.partStates).filter(
       ([key, part]) => isItemCategory(partCategory(key)) || part.status !== "none" || part.photos?.length || part.comments,
@@ -134,13 +142,14 @@
     <div>
       <dt>Itens presentes</dt>
       <dd>
-        {[
-          inspection.hasDocument && "Documento",
-          inspection.hasChildSeat && "Cadeirinha",
-          inspection.hasEToll && "Tag de pedágio",
-        ]
-          .filter(Boolean)
-          .join(", ") || "Nenhum"}
+        {#if presentItems.length}{presentItems.join(', ')}{:else if !accessoryAnswers.length}Nenhum{/if}
+        {#if accessoryAnswers.length}
+          <ul class="report-accessories">
+            {#each accessoryAnswers as [id, name] (id)}
+              <li>{name} · {ACCESSORY_STATUS_LABELS[inspection.accessoryStates[id]]}</li>
+            {/each}
+          </ul>
+        {/if}
       </dd>
     </div>
   </dl>
@@ -195,19 +204,8 @@
           </dd>
         </div>
         <div>
-          <dt>Itens na entrega vs devolução</dt>
-          <dd>
-            {[
-              inspection.deliverySnapshot.hasDocument !== inspection.hasDocument &&
-                (inspection.hasDocument ? "Documento devolvido" : "Documento ausente"),
-              inspection.deliverySnapshot.hasChildSeat !== inspection.hasChildSeat &&
-                (inspection.hasChildSeat ? "Cadeirinha devolvida" : "Cadeirinha ausente"),
-              inspection.deliverySnapshot.hasEToll !== inspection.hasEToll &&
-                (inspection.hasEToll ? "Tag presente" : "Tag ausente"),
-            ]
-              .filter(Boolean)
-              .join(", ") || "Mesmos itens da entrega"}
-          </dd>
+          <dt>Itens na entrega e na devolução</dt>
+          <dd><InteriorItemComparison {inspection} /></dd>
         </div>
         <div>
           <dt>Novas avarias detectadas</dt>
@@ -276,6 +274,11 @@
           </div>
         </div>
       {/if}
+    </section>
+  {:else if inspection.inspectionType === 'Devolução'}
+    <section class="report-section">
+      <h2>Itens na entrega e na devolução</h2>
+      <InteriorItemComparison {inspection} />
     </section>
   {/if}
   <section class="report-section">
@@ -367,6 +370,12 @@
         >{/if}<button class="btn primary" onclick={() => (preview = null)}>Fechar</button
       >{/snippet}</Dialog
   >{/if}
+
+<style>
+  .report-accessories {
+    margin-top: 4px;
+  }
+</style>
 {#if confirm}<Dialog
     title={confirm === "report" ? "Excluir vistoria?" : "Excluir foto?"}
     onclose={() => (confirm = null)}

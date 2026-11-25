@@ -1,5 +1,6 @@
 import { isValidLocation } from '$lib/inspectionLocation.js';
 import { isItemCategory, partCategory, partStateEntries } from '$lib/inspection.js';
+import { INSPECTION_ACCESSORIES, INTERIOR_PRESENCE_ITEMS } from '$lib/inspectionAccessories.js';
 
 /** Validation shared by step links, Continue, and final submission. */
 export function inspectionErrors(report, throughStep = 1) {
@@ -24,6 +25,15 @@ export function inspectionErrors(report, throughStep = 1) {
 		errors.inspectionDateTime = 'Informe uma data e hora válidas.';
 	if (throughStep >= 2 && !String(report.mileage || '').replace(/\D/g, ''))
 		errors.mileage = 'Informe a quilometragem do veículo.';
+	if (throughStep >= 2 && report.inspectionType === 'Entrega') {
+		for (const field of Object.keys(INTERIOR_PRESENCE_ITEMS)) {
+			if (typeof report[field] !== 'boolean') errors[field] = 'Selecione Sim ou Não.';
+		}
+		for (const id of Object.keys(INSPECTION_ACCESSORIES)) {
+			const status = report.accessoryStates?.[id];
+			if (!status || status === 'unverified') errors[id] = 'Selecione Sim ou Não.';
+		}
+	}
 	if (throughStep >= 3) {
 		if (partStateEntries(report.partStates).some(([key, part]) =>
 			isItemCategory(partCategory(key)) && (typeof part.name !== 'string' || !part.name.trim() || part.name.length > 100)))
@@ -68,7 +78,9 @@ export function firstErrorStep(errors) {
 		)
 	)
 		return 1;
-	if (errors.mileage) return 2;
+	if (errors.mileage || Object.keys(errors).some(field =>
+		Object.hasOwn(INTERIOR_PRESENCE_ITEMS, field) || Object.hasOwn(INSPECTION_ACCESSORIES, field)
+	)) return 2;
 	if (errors.partStates) return 3;
 	return 4;
 }

@@ -39,6 +39,31 @@ describe('inspection synchronization', () => {
 		await syncInspectionToCloud(report);
 		expect(JSON.parse(authenticatedFetch.mock.calls[0][1].body).partStates).toMatchObject(partStates);
 	});
+	it('sends the local accessory answers and linked delivery answers independently', async () => {
+		const report = {
+			id: 'ins-return', ownerUid: 'owner-a', schemaVersion: 5, location, inspectionType: 'Devolução',
+			accessoryStates: { spareTire: 'missing', jack: 'not-equipped' },
+			deliverySnapshot: { id: 'ins-delivery', accessoryStates: { spareTire: 'present' } },
+		};
+		getInspection.mockResolvedValue(report);
+		authenticatedFetch.mockResolvedValue({ json: async () => ({ report }) });
+		await syncInspectionToCloud(report);
+		const payload = JSON.parse(authenticatedFetch.mock.calls[0][1].body);
+		expect(payload.accessoryStates).toEqual(report.accessoryStates);
+		expect(payload.deliverySnapshot.accessoryStates).toEqual(report.deliverySnapshot.accessoryStates);
+	});
+	it('preserves an unanswered delivery item for server validation instead of sending No', async () => {
+		const report = {
+			id: 'ins-delivery', ownerUid: 'owner-a', schemaVersion: 5, location, inspectionType: 'Entrega',
+			hasDocument: true, hasChildSeat: false, hasEToll: null,
+		};
+		getInspection.mockResolvedValue(report);
+		authenticatedFetch.mockRejectedValue(new Error('Invalid hasEToll.'));
+		await expect(syncInspectionToCloud(report)).rejects.toThrow('Invalid hasEToll.');
+		expect(JSON.parse(authenticatedFetch.mock.calls[0][1].body)).toMatchObject({
+			hasDocument: true, hasChildSeat: false, hasEToll: null,
+		});
+	});
 	it('rejects missing location before uploading, saving or deleting queued data', async () => {
 		const report = { id: 'missing-location', ownerUid: 'owner-a', schemaVersion: 5 };
 		getInspection.mockResolvedValue(report);

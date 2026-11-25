@@ -12,8 +12,30 @@ import {
   partEntries,
   partName,
 } from "./inspection.js";
+import { compareInteriorItems, INSPECTION_ACCESSORIES } from './inspectionAccessories.js';
 
 describe("inspection helpers", () => {
+  it('compares changes in equipment and presence alongside the existing interior items', () => {
+    const delivery = { hasEToll: true, accessoryStates: {
+      spareTire: 'present', warningTriangle: 'not-equipped', wheelWrench: 'present',
+      wheelLockKey: 'unverified', jack: 'missing', repairKit: 'present', hubcap: 'not-equipped',
+    } };
+    const returned = { hasEToll: false, accessoryStates: {
+      spareTire: 'missing', warningTriangle: 'present', wheelWrench: 'present',
+      wheelLockKey: 'present', jack: 'present', repairKit: 'unverified', hubcap: 'not-equipped',
+    } };
+    expect(compareInteriorItems(returned, delivery)).toEqual({
+      changes: ['Tag ausente', 'Estepe · Presente → Ausente', 'Triângulo · Não possui → Presente', 'Macaco · Ausente → Presente'],
+      notCompared: ['Chave Segredo', 'Kit Reparo'],
+    });
+  });
+
+  it('keeps an unanswered older delivery unknown and reports no changes for matching answers', () => {
+    const report = { accessoryStates: Object.fromEntries(Object.keys(INSPECTION_ACCESSORIES).map(id => [id, 'not-equipped'])) };
+    expect(compareInteriorItems(report, {})).toEqual({ changes: [], notCompared: Object.values(INSPECTION_ACCESSORIES) });
+    expect(compareInteriorItems(report, report)).toEqual({ changes: [], notCompared: [] });
+  });
+
   it('keeps headlights independent and compares each item across delivery and return', () => {
     const delivery = { headlights: {
       left: { name: 'Farol esquerdo', status: 'crack' },

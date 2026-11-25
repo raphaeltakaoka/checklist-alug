@@ -41,6 +41,23 @@ function validPayload(overrides = {}) {
 }
 
 describe("checklist server validation", () => {
+  it('preserves the return answers and the independent delivery answers', () => {
+    const accessoryStates = { spareTire: 'missing', warningTriangle: 'not-equipped', jack: 'unverified' };
+    const deliveryAccessoryStates = { spareTire: 'present', warningTriangle: 'not-equipped' };
+    const report = validateChecklistPayload(validPayload({
+      inspectionType: 'Devolução',
+      accessoryStates,
+      deliverySnapshot: { id: 'delivery', accessoryStates: deliveryAccessoryStates },
+    }), 'owner-a');
+    expect(report.accessoryStates).toEqual(accessoryStates);
+    expect(report.deliverySnapshot.accessoryStates).toEqual(deliveryAccessoryStates);
+  });
+
+  it.each([[], null, { unknown: 'present' }, { spareTire: true }, { spareTire: 'invalid' }])('rejects invalid accessory answers: %j', accessoryStates => {
+    expect(() => validateChecklistPayload(validPayload({ accessoryStates }), 'owner-a')).toThrow('Invalid accessory state');
+    expect(() => validateChecklistPayload(validPayload({ deliverySnapshot: { id: 'delivery', accessoryStates } }), 'owner-a')).toThrow('Invalid accessory state');
+  });
+
   it.each([undefined, null, '', '   ', 'x'.repeat(101)])('requires a bounded name for each item: %j', name => {
     for (const category of ['windows', 'interior', 'headlights']) {
       expect(() => validateChecklistPayload(validPayload({ partStates: {

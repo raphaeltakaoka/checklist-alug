@@ -4,6 +4,7 @@ import {
 	firstErrorStep,
 	inspectionErrors
 } from './inspectionForm.js';
+import { INSPECTION_ACCESSORIES } from './inspectionAccessories.js';
 
 const report = {
 	schemaVersion: 5,
@@ -19,6 +20,15 @@ const report = {
 	partStates: {},
 	clientLicensePhoto: new Blob(['photo']),
 	clientSignature: 'signature'
+};
+const accessoryIds = Object.keys(INSPECTION_ACCESSORIES);
+const delivery = {
+	...report,
+	inspectionType: 'Entrega',
+	hasDocument: true,
+	hasChildSeat: false,
+	hasEToll: false,
+	accessoryStates: Object.fromEntries(accessoryIds.map(id => [id, 'not-equipped']))
 };
 const deferred = () => {
 	let resolve;
@@ -67,6 +77,35 @@ describe('inspection navigation validation', () => {
 				inspectionErrors({ ...missingMileage, licensePlate: 'ABC' }, 4)
 			)
 		).toBe(1);
+	});
+	it('requires all three presence answers to leave the delivery interior, and accepts No', () => {
+		const draft = { ...delivery, hasDocument: null, hasChildSeat: null, hasEToll: null };
+		expect(inspectionErrors(draft, 1)).toEqual({});
+		const errors = inspectionErrors(draft, 2);
+		expect(Object.keys(errors)).toEqual(['hasDocument', 'hasChildSeat', 'hasEToll']);
+		expect(firstErrorStep(errors)).toBe(2);
+		expect(firstErrorStep(inspectionErrors(draft, 4))).toBe(2);
+		expect(inspectionErrors(delivery, 4)).toEqual({});
+	});
+	it('requires the seven accessory answers before leaving the delivery interior', () => {
+		const draft = { ...delivery, accessoryStates: {} };
+		expect(inspectionErrors(draft, 1)).toEqual({});
+		expect(Object.keys(inspectionErrors(draft, 2))).toEqual(accessoryIds);
+		expect(firstErrorStep(inspectionErrors(draft, 4))).toBe(2);
+	});
+	it.each(accessoryIds)('requires presence for %s only when the vehicle has the item', id => {
+		const draft = { ...delivery, accessoryStates: { ...delivery.accessoryStates, [id]: 'unverified' } };
+		expect(Object.keys(inspectionErrors(draft, 2))).toEqual([id]);
+		for (const status of ['not-equipped', 'present', 'missing']) {
+			draft.accessoryStates[id] = status;
+			expect(inspectionErrors(draft, 4)).toEqual({});
+		}
+	});
+	it.each(['Devolução', 'Interno'])('allows unanswered presence items for %s', inspectionType => {
+		expect(inspectionErrors({
+			...report, inspectionType, hasDocument: null, hasChildSeat: null, hasEToll: null,
+			accessoryStates: { spareTire: 'unverified' }
+		}, 2)).toEqual({});
 	});
 	it('requires the CNH and signature only at completion', () => {
 		const unsigned = {

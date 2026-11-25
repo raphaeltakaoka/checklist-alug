@@ -1,5 +1,6 @@
 import { ApiError } from "$lib/server/errors";
 import { CHECKLIST_SCHEMA_VERSION, countDamages, isItemCategory, partCategory, partStateEntries, setPartState } from '$lib/inspection.js';
+import { ACCESSORY_STATUS_LABELS, INSPECTION_ACCESSORIES, INTERIOR_PRESENCE_ITEMS } from '$lib/inspectionAccessories.js';
 import { validateContactId } from '$lib/server/contacts';
 import { validateCarId } from '$lib/server/cars';
 import { isValidLocation } from '$lib/inspectionLocation.js';
@@ -31,6 +32,7 @@ const ALLOWED_FIELDS = new Set([
   "hasDocument",
   "hasChildSeat",
   "hasEToll",
+  'accessoryStates',
   "partStates",
   "deliveryChecklistId",
   "deliverySnapshot",
@@ -168,6 +170,18 @@ function sanitizePartStatesForSnapshot(partStates) {
   return clean;
 }
 
+function cleanAccessoryStates(states) {
+  if (states === undefined) return {};
+  if (!states || typeof states !== 'object' || Array.isArray(states)) fail('Invalid accessory states.');
+  const entries = Object.entries(states);
+  for (const [id, status] of entries) {
+    if (!Object.hasOwn(INSPECTION_ACCESSORIES, id) || typeof status !== 'string' || !Object.hasOwn(ACCESSORY_STATUS_LABELS, status)) {
+      fail('Invalid accessory state.');
+    }
+  }
+  return Object.fromEntries(entries);
+}
+
 function cleanDeliverySnapshot(snapshot) {
   if (!snapshot) return null;
   if (typeof snapshot !== "object" || Array.isArray(snapshot)) fail("Invalid delivery snapshot.");
@@ -187,6 +201,7 @@ function cleanDeliverySnapshot(snapshot) {
     hasDocument: Boolean(snapshot.hasDocument),
     hasChildSeat: Boolean(snapshot.hasChildSeat),
     hasEToll: Boolean(snapshot.hasEToll),
+    accessoryStates: cleanAccessoryStates(snapshot.accessoryStates),
     partStates: sanitizePartStatesForSnapshot(snapshot.partStates),
   };
 }
@@ -208,7 +223,7 @@ export function validateChecklistPayload(payload, ownerUid) {
   if (!["Entrega", "Devolução", "Interno"].includes(payload.inspectionType)) fail("Invalid inspection type.");
   const isInternal = payload.inspectionType === "Interno";
   if (!FUEL_LEVELS.has(payload.fuelLevel)) fail("Invalid fuel level.");
-  for (const field of ["hasDocument", "hasChildSeat", "hasEToll"]) {
+  for (const field of Object.keys(INTERIOR_PRESENCE_ITEMS)) {
     if (typeof payload[field] !== "boolean") fail(`Invalid ${field}.`);
   }
   if (payload.status !== "completed" || payload.synced !== true) fail("Invalid sync status.");
@@ -257,6 +272,7 @@ export function validateChecklistPayload(payload, ownerUid) {
     hasDocument: payload.hasDocument,
     hasChildSeat: payload.hasChildSeat,
     hasEToll: payload.hasEToll,
+    accessoryStates: cleanAccessoryStates(payload.accessoryStates),
     partStates: cleanPartStates(payload.partStates, prefix, isInternal),
     deliveryChecklistId,
     deliverySnapshot,

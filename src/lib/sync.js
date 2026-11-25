@@ -130,6 +130,7 @@ async function uploadInspectionMedia(report) {
 }
 
 function buildCloudReport(localReport) {
+  const isDelivery = localReport.inspectionType === 'Entrega';
   return {
     schemaVersion: localReport.schemaVersion,
     location: localReport.location,
@@ -152,9 +153,10 @@ function buildCloudReport(localReport) {
     carDiagramImagePath: localReport.carDiagramImagePath || "",
     mileage: String(localReport.mileage || "").slice(0, 20),
     fuelLevel: localReport.fuelLevel,
-    hasDocument: Boolean(localReport.hasDocument),
-    hasChildSeat: Boolean(localReport.hasChildSeat),
-    hasEToll: Boolean(localReport.hasEToll),
+    hasDocument: isDelivery ? localReport.hasDocument : Boolean(localReport.hasDocument),
+    hasChildSeat: isDelivery ? localReport.hasChildSeat : Boolean(localReport.hasChildSeat),
+    hasEToll: isDelivery ? localReport.hasEToll : Boolean(localReport.hasEToll),
+    accessoryStates: localReport.accessoryStates,
     partStates: cleanPartStates(localReport.partStates),
     deliveryChecklistId: localReport.deliveryChecklistId || null,
     deliverySnapshot: localReport.deliverySnapshot || null,

@@ -35,6 +35,7 @@
     formatMileage,
     normalizeCloudInspection,
   } from "$lib/inspection.js";
+  import { ACCESSORY_STATUS_LABELS, INSPECTION_ACCESSORIES, INTERIOR_PRESENCE_ITEMS } from '$lib/inspectionAccessories.js';
   import { createInspectionWriter, inspectionErrors, firstErrorStep, suggestSignatureName } from "$lib/inspectionForm.js";
   import { linkInspectionContact, unlinkInspectionContact } from '$lib/contacts.js';
   import ClientContactField from '$lib/components/ClientContactField.svelte';
@@ -49,6 +50,7 @@
   import DamageModal from "$lib/components/DamageModal.svelte";
   import SignaturePad from "$lib/components/SignaturePad.svelte";
   import InspectionLocation from '$lib/components/InspectionLocation.svelte';
+  import InteriorItemComparison from '$lib/components/InteriorItemComparison.svelte';
   import { createLocationCapture } from '$lib/inspectionLocation.js';
   let report = $state({
     schemaVersion: CHECKLIST_SCHEMA_VERSION,
@@ -70,9 +72,10 @@
     carDiagramImage: null,
     mileage: "",
     fuelLevel: "4/8",
-    hasDocument: false,
-    hasChildSeat: false,
-    hasEToll: false,
+    hasDocument: null,
+    hasChildSeat: null,
+    hasEToll: null,
+    accessoryStates: {},
     partStates: {},
     deliveryChecklistId: null,
     deliverySnapshot: null,
@@ -122,6 +125,7 @@
   }
 
   let isInternal = $derived(report.inspectionType === "Interno");
+  let isDelivery = $derived(report.inspectionType === 'Entrega');
   let heading = $derived(`${page.url.searchParams.has("id") ? "Continuar" : "Nova"} vistoria${isInternal ? " interna" : ""}`);
   let eligible = $derived(draftStarted || !!(report.licensePlate || report.clientName || report.contactId));
   let photoCount = $derived(
@@ -143,6 +147,13 @@
       : [],
   );
   const steps = ["Detalhes", "Interior", "Danos", "Conclusão"];
+
+  function setAccessoryEquipped(id, equipped) {
+    const status = report.accessoryStates[id];
+    if (!equipped) report.accessoryStates[id] = 'not-equipped';
+    else if (!status || status === 'not-equipped') report.accessoryStates[id] = 'unverified';
+  }
+
   function snapshot(status = "draft") {
     const snap = $state.snapshot(report);
     return {
@@ -244,6 +255,7 @@
       hasDocument: Boolean(delivery.hasDocument),
       hasChildSeat: Boolean(delivery.hasChildSeat),
       hasEToll: Boolean(delivery.hasEToll),
+      accessoryStates: { ...delivery.accessoryStates },
       partStates: delivery.partStates || {},
     };
     if (delivery.clientName && !report.clientName) {
@@ -548,6 +560,7 @@
           report = {
             ...draft,
             mileage: formatMileage(draft.mileage),
+            accessoryStates: draft.accessoryStates ?? {},
           };
           if (report.deliveryChecklistId) {
             linkedDeliveryPlate = report.licensePlate;
@@ -654,6 +667,13 @@
   });
 </script>
 
+{#snippet yesNoSelector(isYes, isNo, onSelect)}
+  <div class="segmented">
+    <button type="button" aria-pressed={isYes} onclick={() => onSelect(true)}>Sim</button>
+    <button type="button" aria-pressed={isNo} onclick={() => onSelect(false)}>Não</button>
+  </div>
+{/snippet}
+
 <svelte:head
   ><title
     >{heading} · Checklist Alug</title
@@ -716,6 +736,9 @@
                       type="button"
                       aria-pressed={report.inspectionType === type}
                       onclick={() => {
+                        if (report.inspectionType !== type && type === 'Entrega') {
+                          for (const field of Object.keys(INTERIOR_PRESENCE_ITEMS)) report[field] = null;
+                        }
                         report.inspectionType = type;
                         if (type === "Entrega") {
                           if (report.deliveryChecklistId) clearDelivery();
@@ -896,25 +919,56 @@
             </div>
             <div>
               <h3>Itens presentes</h3>
-              <label class="check-row" for="document"
-                >Documento do veículo<input
-                  id="document"
-                  type="checkbox"
-                  bind:checked={report.hasDocument}
-                /></label
-              ><label class="check-row" for="seat"
-                >Cadeirinha infantil<input
-                  id="seat"
-                  type="checkbox"
-                  bind:checked={report.hasChildSeat}
-                /></label
-              ><label class="check-row" for="toll"
-                >Tag de pedágio<input
-                  id="toll"
-                  type="checkbox"
-                  bind:checked={report.hasEToll}
-                /></label
-              >
+              {#each Object.entries(INTERIOR_PRESENCE_ITEMS) as [field, name] (field)}
+                <div class="presence-row">
+                  <fieldset id={field} tabindex="-1" data-invalid={!!errors[field]} aria-describedby={errors[field] ? `${field}-error` : undefined}>
+                    <legend>{name}{isDelivery ? ' *' : ''}</legend>
+                    {@render yesNoSelector(report[field] === true, report[field] === false, answer => (report[field] = answer))}
+                    {#if errors[field]}
+                      <p id={`${field}-error`} class="field-error">{errors[field]}</p>
+                    {/if}
+                  </fieldset>
+                </div>
+              {/each}
+              {#each Object.entries(INSPECTION_ACCESSORIES) as [id, name] (id)}
+                {@const status = report.accessoryStates[id]}
+                {@const equipmentError = !status && errors[id]}
+                {@const presenceError = status === 'unverified' && errors[id]}
+                <div class="accessory-row">
+                  <div class="inline">
+                    <fieldset
+                      id={`${id}-equipment`}
+                      tabindex="-1"
+                      data-invalid={!!equipmentError}
+                      aria-describedby={equipmentError ? `${id}-error` : undefined}
+                    >
+                      <legend>Possui {name.toLowerCase()}?{isDelivery ? ' *' : ''}</legend>
+                      {@render yesNoSelector(!!status && status !== 'not-equipped', status === 'not-equipped', answer => setAccessoryEquipped(id, answer))}
+                      {#if equipmentError}
+                        <p id={`${id}-error`} class="field-error">{equipmentError}</p>
+                      {/if}
+                    </fieldset>
+                    {#if status && status !== 'not-equipped'}
+                      <fieldset
+                        id={`${id}-presence`}
+                        tabindex="-1"
+                        aria-label={`Está presente? ${name}`}
+                        data-invalid={!!presenceError}
+                        aria-describedby={presenceError ? `${id}-error` : undefined}
+                      >
+                        <legend>Está presente?{isDelivery ? ' *' : ''}</legend>
+                        {@render yesNoSelector(status === 'present', status === 'missing', answer => (report.accessoryStates[id] = answer ? 'present' : 'missing'))}
+                        {#if presenceError}
+                          <p id={`${id}-error`} class="field-error">{presenceError}</p>
+                        {/if}
+                      </fieldset>
+                    {/if}
+                  </div>
+                  {#if report.deliverySnapshot}
+                    <p class="field-help">Na entrega · {ACCESSORY_STATUS_LABELS[report.deliverySnapshot.accessoryStates?.[id]] ?? 'Sem registro'}</p>
+                  {/if}
+                </div>
+              {/each}
             </div>
           </div>
         {:else if step === 3}
@@ -1023,6 +1077,12 @@
                     {/if}
                   </div>
                 {/if}
+              </div>
+            {/if}
+            {#if report.inspectionType === 'Devolução'}
+              <div class="panel panel-pad item-comparison">
+                <h3>Itens na entrega e na devolução</h3>
+                <InteriorItemComparison inspection={report} />
               </div>
             {/if}
             <div class="panel panel-pad" style="background:#f7f9f7">
@@ -1193,6 +1253,7 @@
       licensePreviewOpen = false;
     }} />
 {/if}
+
 {#if isItemCategory(activePart)}
   <DamageItemsModal bind:category={activePart} bind:partStates={report.partStates} markNewDamage={!isInternal} />
 {:else if activePart}<DamageModal
@@ -1258,3 +1319,30 @@
     {/snippet}
   </Dialog>
 {/if}
+
+<style>
+  .presence-row,
+  .accessory-row {
+    padding-block: 12px;
+    border-top: 1px solid var(--border);
+  }
+
+  .accessory-row .inline {
+    align-items: start;
+    column-gap: 20px;
+  }
+
+  .presence-row legend,
+  .accessory-row legend {
+    margin-bottom: 6px;
+    font-size: 0.875rem;
+  }
+
+  .accessory-row .field-help {
+    margin-top: 6px;
+  }
+
+  .item-comparison h3 {
+    margin-bottom: 8px;
+  }
+</style>

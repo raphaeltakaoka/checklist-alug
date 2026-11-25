@@ -40,6 +40,7 @@ const fixtureReport = {
 	hasDocument: true,
 	hasChildSeat: false,
 	hasEToll: true,
+	accessoryStates: { spareTire: 'present', warningTriangle: 'not-equipped' },
 	clientLicensePhoto: 'https://ui-fixtures.invalid/license.png',
 	clientSignature: 'https://ui-fixtures.invalid/signature.png',
 	synced: true,
@@ -327,6 +328,17 @@ async function click(label, exact = true) {
 	}
 	throw new Error(`Control not found: ${label}`);
 }
+async function chooseAccessory(index, question, answer) {
+	const selector = `.accessory-row:nth-child(${index + 1} of .accessory-row) fieldset:nth-of-type(${question + 1}) button:nth-of-type(${answer === 'Sim' ? 1 : 2})`;
+	const button = await page.waitForSelector(selector, { visible: true });
+	await button.evaluate(element => element.scrollIntoView({ block: 'center' }));
+	await button.click();
+}
+async function choosePresence(field, answer) {
+	const button = await page.waitForSelector(`#${field} button:${answer === 'Sim' ? 'first' : 'last'}-child`, { visible: true });
+	await button.evaluate(element => element.scrollIntoView({ block: 'center' }));
+	await button.click();
+}
 async function tapSuggestionAfterBlur(inputId, optionIndex = 0) {
 	await page.focus(`#${inputId}`);
 	const selector = `#${inputId}-option-${optionIndex}`;
@@ -565,7 +577,38 @@ try {
 	await waitText('Informe a quilometragem');
 	assert.equal(await page.evaluate(() => document.activeElement.id), 'mileage');
 	await page.type('#mileage', '45678');
+	assert.equal(await page.$('.presence-row [aria-pressed="true"]'), null);
+	await click('Continuar');
+	await page.waitForFunction(() => document.activeElement.id === 'hasDocument');
+	assert.equal(await page.$$('.presence-row [data-invalid="true"]').then(fields => fields.length), 3);
+	await choosePresence('hasDocument', 'Sim');
+	await choosePresence('hasChildSeat', 'Não');
+	await click('Conclusão', false);
+	await page.waitForFunction(() => document.activeElement.id === 'hasEToll');
+	assert.equal(await page.$eval('#step-title', el => el.textContent), 'Interior');
+	await choosePresence('hasEToll', 'Não');
 	await screenshot('form-interior-mobile');
+	assert.deepEqual(await page.$$eval('.accessory-row legend', els => els.map(el => el.textContent)), [
+		'Possui estepe? *', 'Possui triângulo? *', 'Possui chave de roda? *', 'Possui chave segredo? *',
+		'Possui macaco? *', 'Possui kit reparo? *', 'Possui tampão? *',
+	]);
+	await click('Continuar');
+	await page.waitForFunction(() => document.activeElement.id === 'spareTire-equipment');
+	assert.equal(await page.$$eval('.accessory-row [data-invalid="true"]', els => els.length), 7);
+	await chooseAccessory(0, 0, 'Sim');
+	await click('Conclusão', false);
+	await page.waitForFunction(() => document.activeElement.id === 'spareTire-presence');
+	assert.equal(await page.$eval('#spareTire-error', el => el.textContent), 'Selecione Sim ou Não.');
+	await chooseAccessory(0, 1, 'Não');
+	await chooseAccessory(0, 0, 'Não');
+	assert.equal(await page.$('fieldset[aria-label="Está presente? Estepe"]'), null);
+	await chooseAccessory(0, 0, 'Sim');
+	assert.equal(await page.$('fieldset[aria-label="Está presente? Estepe"] [aria-pressed="true"]'), null);
+	await chooseAccessory(0, 1, 'Sim');
+	await chooseAccessory(1, 0, 'Não');
+	await chooseAccessory(2, 0, 'Sim');
+	await chooseAccessory(2, 1, 'Não');
+	for (const index of [3, 4, 5, 6]) await chooseAccessory(index, 0, 'Não');
 	await click('Continuar');
 	await waitText('Selecione uma peça');
 	assert.equal(await page.$('.damage-indicator'), null, 'Categories without damage have no indicator');
@@ -1009,8 +1052,16 @@ try {
 	await page.goto(base + `/dashboard/new/${completed.id}`);
 	await waitText('Vistoria não encontrada');
 	const uploadedReport = requests.find(r => r.path === '/api/checklists/sync' && r.body?.id === completed.id).body;
+	assert.deepEqual([uploadedReport.hasDocument, uploadedReport.hasChildSeat, uploadedReport.hasEToll], [true, false, false]);
+	assert.deepEqual(uploadedReport.accessoryStates, {
+		spareTire: 'present', warningTriangle: 'not-equipped', wheelWrench: 'missing',
+		wheelLockKey: 'not-equipped', jack: 'not-equipped', repairKit: 'not-equipped', hubcap: 'not-equipped',
+	});
 	await page.evaluate(report => sessionStorage.setItem('ui-synced-report', JSON.stringify(report)), uploadedReport);
 	await page.goto(base + `/dashboard/checklists/${completed.id}`);
+	await waitText('Estepe · Presente');
+	await waitText('Triângulo · Não possui');
+	await waitText('Chave de Roda · Ausente');
 	await waitText('Mapa indisponível');
 	assert((await text()).includes('-22.800000'));
 	failMaps = false;
@@ -1214,6 +1265,16 @@ try {
 	await click('Interior', false);
 	await page.waitForSelector('#mileage');
 	await page.type('#mileage', '32400');
+	assert.equal(await page.$eval('#hasDocument button[aria-pressed="true"]', el => el.textContent), 'Sim');
+	assert.equal(await page.$eval('#hasChildSeat button[aria-pressed="true"]', el => el.textContent), 'Não');
+	assert.equal(await page.$eval('#hasEToll button[aria-pressed="true"]', el => el.textContent), 'Sim');
+	await waitText('Na entrega · Presente');
+	await waitText('Na entrega · Sem registro');
+	assert.equal(await page.$('.accessory-row [aria-pressed="true"]'), null, 'The return starts with fresh accessory answers');
+	await chooseAccessory(0, 0, 'Sim');
+	await chooseAccessory(0, 1, 'Não');
+	await chooseAccessory(1, 0, 'Não');
+	await screenshot('return-accessories-mobile');
 	await click('Danos', false);
 	await click('Vidros', false);
 	await page.click('button[aria-label="Editar Parabrisa"]');
@@ -1239,6 +1300,8 @@ try {
 	const deliveryDraft = await page.evaluate(async () => (
 		await (await import('/src/lib/db.js')).getAllInspections('ui-test-inspector')
 	).find(r => r.deliveryChecklistId === 'ui-linked-delivery'));
+	assert.deepEqual(deliveryDraft.accessoryStates, { spareTire: 'missing', warningTriangle: 'not-equipped' });
+	assert.deepEqual(deliveryDraft.deliverySnapshot.accessoryStates, fixtureReport.accessoryStates);
 	assert.equal(deliveryDraft.partStates.headlights.left.name, 'Farol esquerdo');
 	assert.equal(deliveryDraft.partStates.headlights.left.isNewDamage, false);
 	assert.equal(deliveryDraft.partStates.headlights.left.deliveryPhotos.length, 1);
@@ -1251,6 +1314,15 @@ try {
 	await page.goto(base + `/dashboard/new?id=${deliveryDraft.id}`);
 	await waitText('Contato vinculado');
 	assert.equal(await page.$eval('#client', el => el.readOnly), true);
+	await click('Conclusão', false);
+	await waitText('Estepe · Presente → Ausente');
+	await waitText('Sem respostas suficientes para comparar Chave de Roda');
+	await screenshot('return-accessories-comparison-mobile');
+	await click('Editar interior');
+	await chooseAccessory(0, 1, 'Sim');
+	await click('Conclusão', false);
+	await waitText('Nenhuma alteração nos itens comparados.');
+	await click('Detalhes', false);
 	await click('Desvincular contato');
 	await click('Salvar e sair');
 	await waitText('Olá, Rafael.');
@@ -1282,6 +1354,7 @@ try {
 	assert.deepEqual(clearedCar.partStates, {}, 'Inherited damages are removed with the vehicle');
 	console.log('PASS vehicles: threshold, debounce, normalization, keyboard and pointer selection, required link, stale results, failures, offline restoration and completion, sync payload, delivery inheritance and unlink');
 	console.log('PASS contacts: three-character threshold, keyboard and pointer selection, stale results, search failures, independent signer, delivery validation and draft restoration');
+	console.log('PASS interior accessories: conditional questions, saved return answers, sync, report, and comparison with incomplete delivery data');
 	assert.deepEqual(errors, [], 'No browser runtime errors');
 	assert(
 		requests.some(
